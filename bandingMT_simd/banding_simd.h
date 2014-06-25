@@ -15,15 +15,20 @@
 
 //実は普通にmemcpyのほうが速いかもだけど気にしない
 static void __forceinline sse2_memcpy(BYTE *dst, BYTE *src, int size) {
+	if (size < 64) {
+		for (int i = 0; i < size; i++)
+			dst[i] = src[i];
+		return;
+	}
 	BYTE *dst_fin = dst + size;
-	BYTE *dst_aligned_fin = (BYTE *)(((size_t)dst_fin & ~15) - 64);
+	BYTE *dst_aligned_fin = (BYTE *)(((size_t)(dst_fin + 15) & ~15) - 64);
 	__m128i x0, x1, x2, x3;
 	const int start_align_diff = (int)((size_t)dst & 15);
 	if (start_align_diff) {
 		x0 = _mm_loadu_si128((__m128i*)src);
 		_mm_storeu_si128((__m128i*)dst, x0);
-		dst += start_align_diff;
-		src += start_align_diff;
+		dst += 16 - start_align_diff;
+		src += 16 - start_align_diff;
 	}
 	for ( ; dst < dst_aligned_fin; dst += 64, src += 64) {
 		x0 = _mm_loadu_si128((__m128i*)(src +  0));
@@ -103,15 +108,20 @@ static __forceinline __m128i apply_field_mask_128(__m128i xRef, BOOL to_lower_by
 
 //実は普通にmemcpyのほうが速いかもだけど気にしない
 static void __forceinline avx2_memcpy(BYTE *dst, BYTE *src, int size) {
+	if (size < 128) {
+		for (int i = 0; i < size; i++)
+			dst[i] = src[i];
+		return;
+	}
 	BYTE *dst_fin = dst + size;
-	BYTE *dst_aligned_fin = (BYTE *)(((size_t)dst_fin & ~31) - 128);
+	BYTE *dst_aligned_fin = (BYTE *)(((size_t)(dst_fin + 31) & ~31) - 128);
 	__m256i y0, y1, y2, y3;
 	const int start_align_diff = (int)((size_t)dst & 31);
 	if (start_align_diff) {
 		y0 = _mm256_loadu_si256((__m256i*)src);
 		_mm256_storeu_si256((__m256i*)dst, y0);
-		dst += start_align_diff;
-		src += start_align_diff;
+		dst += 32 - start_align_diff;
+		src += 32 - start_align_diff;
 	}
 	for ( ; dst < dst_aligned_fin; dst += 128, src += 128) {
 		y0 = _mm256_loadu_si256((__m256i*)(src +  0));
