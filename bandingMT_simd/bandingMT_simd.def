@@ -1,0 +1,5 @@
+﻿LIBRARY bandingMT_simd.auf
+
+EXPORTS
+	GetFilterTable @1
+
