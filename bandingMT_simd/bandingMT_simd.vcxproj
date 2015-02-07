@@ -69,6 +69,10 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <ModuleDefinitionFile>bandingMT_simd.def</ModuleDefinitionFile>
     </Link>
+    <ResourceCompile>
+      <Culture>0x0411</Culture>
+      <AdditionalOptions>/c 65001 %(AdditionalOptions)</AdditionalOptions>
+    </ResourceCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
@@ -101,6 +105,10 @@
       <OptimizeReferences>true</OptimizeReferences>
       <ModuleDefinitionFile>bandingMT_simd.def</ModuleDefinitionFile>
     </Link>
+    <ResourceCompile>
+      <Culture>0x0411</Culture>
+      <AdditionalOptions>/c 65001 %(AdditionalOptions)</AdditionalOptions>
+    </ResourceCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="bandingMT_simd.cpp" />
