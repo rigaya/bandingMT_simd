@@ -171,14 +171,10 @@ static __forceinline __m256i _mm256_multi3_epi32(__m256i a) {
 }
 
 static __forceinline __m256i _mm256_neg_epi32(__m256i y) {
-	__m256i yTemp = _mm256_cmpeq_epi8(y, y);
-	y = _mm256_add_epi32(_mm256_xor_si256(y, yTemp), _mm256_srli_epi32(yTemp, 31));
-	return y;
+	return _mm256_sub_epi32(_mm256_setzero_si256(), y);
 }
 static __forceinline __m256i _mm256_neg_epi16(__m256i y) {
-	__m256i yTemp = _mm256_cmpeq_epi8(y, y);
-	y = _mm256_add_epi32(_mm256_xor_si256(y, yTemp), _mm256_srli_epi16(yTemp, 15));
-	return y;
+	return _mm256_sub_epi16(_mm256_setzero_si256(), y);
 }
 
 static __forceinline int limit_1_to_16(int value) {
