@@ -16,9 +16,9 @@
 #include "xor_rand.h"
 
 #ifdef DEFINE_GLOBAL
-	#define EXTERN
+    #define EXTERN
 #else
-	#define EXTERN extern
+    #define EXTERN extern
 #endif //DEFINE_GLOBAL
 
 typedef void (*func_generate_dither_buffer)(int thread_id, int thread_num, int seed);
@@ -92,7 +92,7 @@ void decrease_banding_mode2_blur_later_i_avx2(int thread_id, int thread_num, FIL
 void decrease_banding_mode2_blur_first_i_avx2(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip);
 
 typedef struct {
-	func_decrease_banding set[2][2];
+    func_decrease_banding set[2][2];
 } func_decrease_banding_mode_t;
 
 enum {
@@ -102,21 +102,21 @@ enum {
     SSSE3  = 0x0004,
     SSE41  = 0x0008,
     SSE42  = 0x0010,
-	POPCNT = 0x0020,
+    POPCNT = 0x0020,
     AVX    = 0x0040,
     AVX2   = 0x0080,
 };
 
 typedef struct {
-	union {
-		xor514_t   *gen_rand;
-		xor514x2_t *gen_rand_avx2;
-	};
-	int thread_num;         //現在gen_randで確保している数
-	int current_thread_num; //直近のスレッド数
-	int _seed;              ///現在の設定(要チェック)
-	DWORD availableSIMD;
-	func_decrease_banding_mode_t decrease_banding[3]; //sample_mode別のバンディング低減関数
+    union {
+        xor514_t   *gen_rand;
+        xor514x2_t *gen_rand_avx2;
+    };
+    int thread_num;         //現在gen_randで確保している数
+    int current_thread_num; //直近のスレッド数
+    int _seed;              ///現在の設定(要チェック)
+    DWORD availableSIMD;
+    func_decrease_banding_mode_t decrease_banding[3]; //sample_mode別のバンディング低減関数
 } banding_t;
 
 EXTERN banding_t band;

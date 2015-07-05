@@ -17,41 +17,41 @@
 #include "banding_simd.h"
 
 void decrease_banding_mode0_p_avx(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
-	decrease_banding_mode0_simd(thread_id, thread_num, fp, fpip, FALSE, AVX|SSE41|SSSE3|SSE2);
+    decrease_banding_mode0_simd(thread_id, thread_num, fp, fpip, FALSE, AVX|SSE41|SSSE3|SSE2);
 }
 
 void decrease_banding_mode0_i_avx(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
-	decrease_banding_mode0_simd(thread_id, thread_num, fp, fpip, TRUE, AVX|SSE41|SSSE3|SSE2);
+    decrease_banding_mode0_simd(thread_id, thread_num, fp, fpip, TRUE, AVX|SSE41|SSSE3|SSE2);
 }
 
 void decrease_banding_mode1_blur_first_p_avx(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
-	decrease_banding_mode1_simd(thread_id, thread_num, fp, fpip, TRUE, FALSE, AVX|SSE41|SSSE3|SSE2);
+    decrease_banding_mode1_simd(thread_id, thread_num, fp, fpip, TRUE, FALSE, AVX|SSE41|SSSE3|SSE2);
 }
 
 void decrease_banding_mode1_blur_first_i_avx(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
-	decrease_banding_mode1_simd(thread_id, thread_num, fp, fpip, TRUE, TRUE, AVX|SSE41|SSSE3|SSE2);
+    decrease_banding_mode1_simd(thread_id, thread_num, fp, fpip, TRUE, TRUE, AVX|SSE41|SSSE3|SSE2);
 }
 
 void decrease_banding_mode1_blur_later_p_avx(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
-	decrease_banding_mode1_simd(thread_id, thread_num, fp, fpip, FALSE, FALSE, AVX|SSE41|SSSE3|SSE2);
+    decrease_banding_mode1_simd(thread_id, thread_num, fp, fpip, FALSE, FALSE, AVX|SSE41|SSSE3|SSE2);
 }
 
 void decrease_banding_mode1_blur_later_i_avx(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
-	decrease_banding_mode1_simd(thread_id, thread_num, fp, fpip, FALSE, TRUE, AVX|SSE41|SSSE3|SSE2);
+    decrease_banding_mode1_simd(thread_id, thread_num, fp, fpip, FALSE, TRUE, AVX|SSE41|SSSE3|SSE2);
 }
 
 void decrease_banding_mode2_blur_first_p_avx(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
-	decrease_banding_mode2_simd(thread_id, thread_num, fp, fpip, TRUE, FALSE, AVX|SSE41|SSSE3|SSE2);
+    decrease_banding_mode2_simd(thread_id, thread_num, fp, fpip, TRUE, FALSE, AVX|SSE41|SSSE3|SSE2);
 }
 
 void decrease_banding_mode2_blur_first_i_avx(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
-	decrease_banding_mode2_simd(thread_id, thread_num, fp, fpip, TRUE, TRUE, AVX|SSE41|SSSE3|SSE2);
+    decrease_banding_mode2_simd(thread_id, thread_num, fp, fpip, TRUE, TRUE, AVX|SSE41|SSSE3|SSE2);
 }
 
 void decrease_banding_mode2_blur_later_p_avx(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
-	decrease_banding_mode2_simd(thread_id, thread_num, fp, fpip, FALSE, FALSE, AVX|SSE41|SSSE3|SSE2);
+    decrease_banding_mode2_simd(thread_id, thread_num, fp, fpip, FALSE, FALSE, AVX|SSE41|SSSE3|SSE2);
 }
 
 void decrease_banding_mode2_blur_later_i_avx(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
-	decrease_banding_mode2_simd(thread_id, thread_num, fp, fpip, FALSE, TRUE, AVX|SSE41|SSSE3|SSE2);
+    decrease_banding_mode2_simd(thread_id, thread_num, fp, fpip, FALSE, TRUE, AVX|SSE41|SSSE3|SSE2);
 }
