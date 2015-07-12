@@ -16,6 +16,10 @@
 #include "filter.h"
 #include "banding_simd.h"
 
+#if _MSC_VER >= 1800 && !defined(__AVX__) && !defined(_DEBUG)
+static_assert(false, "do not forget to set /arch:AVX or /arch:AVX2 for this file.");
+#endif
+
 void decrease_banding_mode0_p_avx(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
     decrease_banding_mode0_simd(thread_id, thread_num, fp, fpip, FALSE, AVX|SSE41|SSSE3|SSE2);
 }

@@ -16,6 +16,10 @@
 #include "filter.h"
 #include "banding_simd.h"
 
+#if _MSC_VER >= 1800 && !defined(__AVX__) && !defined(_DEBUG)
+static_assert(false, "do not forget to set /arch:AVX or /arch:AVX2 for this file.");
+#endif
+
 #define USE_VPGATHER 0
 
 //mode012共通 ... ref用乱数の見を発生させる
