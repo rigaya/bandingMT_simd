@@ -117,7 +117,7 @@ static void init_gen_rand() {
 
 BOOL init_band(FILTER *fp, FILTER_PROC_INFO *fpip) {
     if (NULL == band.gen_rand_avx2) {
-        band.availableSIMD = get_availableSIMD() & ~AVX2;
+        band.availableSIMD = get_availableSIMD();
         //使用する関数を設定
         band_set_func();
         //スレッド数の取得
