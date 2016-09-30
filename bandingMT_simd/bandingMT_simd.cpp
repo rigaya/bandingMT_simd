@@ -105,6 +105,8 @@ EXTERN_C FILTER_DLL __declspec(dllexport) * __stdcall GetFilterTable( void )
 
 BOOL func_init( FILTER *fp ) {
     ZeroMemory(&band, sizeof(band));
+    band.block_count_x = 1;
+    band.block_count_y = 1;
     return TRUE;
 }
 
@@ -151,6 +153,20 @@ BOOL init_band(FILTER *fp, FILTER_PROC_INFO *fpip) {
     return TRUE;
 }
 
+void band_get_block_range(int ib, int width, int height, int *x_start, int *x_fin, int *y_start, int *y_fin) {
+    //ブロックのy方向のインデックス
+    int by = ib / band.block_count_x;
+    //ブロックのx方向のインデックス
+    int bx = ib - by * band.block_count_x;
+    //ブロックのx方向の範囲を算出
+    *x_start = ((width * bx) / band.block_count_x + 31) & (~31);
+    int x_fin_raw = ((width * (bx+1)) / band.block_count_x + 31) & (~31);
+    *x_fin   = (bx == band.block_count_x-1) ? width : x_fin_raw;
+    //ブロックのy方向の範囲を算出
+    *y_start = (height * by) / band.block_count_y;
+    *y_fin   = (height * (by+1)) / band.block_count_y;
+}
+
 void multi_thread_func( int thread_id, int thread_num, void *param1, void *param2 )
 {
 //    thread_id    : スレッド番号 ( 0 ～ thread_num-1 )
@@ -177,6 +193,88 @@ void multi_thread_func( int thread_id, int thread_num, void *param1, void *param
     if (thread_id < band.current_thread_num)
         band.decrease_banding[sample_mode].set[process_per_field][blur_first](thread_id, min(thread_num, band.current_thread_num), fp, fpip);
 }
+
+#if BANDING_PERF_CHECK
+static char **dummy_area = nullptr;
+static int dummy_area_count = 0;
+static const int DUMMY_AREA = 4 * 1024 * 1024;
+
+void multi_thread_func_dummy(int thread_id, int thread_num, void *param1, void *param2) {
+    memcpy(dummy_area[thread_id] + DUMMY_AREA, dummy_area[thread_id], DUMMY_AREA);
+}
+
+void band_perf_check(FILTER *fp, FILTER_PROC_INFO *fpip) {
+    static int check_count = 0;
+    static std::map<int64_t, double> check_ms;
+    static const int X_DIV[] = { 1, 2, 4, 6, 8, 10, 12, 16, 20, 24, 30, 40 };
+    static const int Y_DIV[] = { 1, 2, 4, 6, 8, 10, 12, 16, 20, 24, 32, 40, 48, 56, 64, 72, 80, 96, 128 };
+    const int sample_mode    = fp->track[6];
+    int64_t nFreq, nStart, nFin;
+    if (dummy_area_count < band.current_thread_num) {
+        for (int i = 0; i < dummy_area_count; i++) {
+            if (dummy_area[i]) {
+                _aligned_free(dummy_area[i]);
+            }
+        }
+        if (dummy_area) {
+            free(dummy_area);
+            dummy_area = nullptr;
+        }
+        dummy_area_count = band.current_thread_num;
+        dummy_area = (char **)malloc(sizeof(char *) * band.current_thread_num);
+        for (int i = 0; i < band.current_thread_num; i++) {
+            dummy_area[i] = (char *)_aligned_malloc(2 * DUMMY_AREA, 32);
+        }
+    }
+    auto gen_key = [](int sample_mode, int block_count_y, int block_count_x) {
+        return ((int64_t)sample_mode) << 32 | ((int64_t)block_count_y << 16) | (int64_t)block_count_x;
+    };
+    QueryPerformanceFrequency((LARGE_INTEGER *)&nFreq);
+    for (int y = 0; y < _countof(Y_DIV); y++) {
+        for (int x = 0; x < _countof(X_DIV); x++) {
+            band.block_count_x = X_DIV[x];
+            band.block_count_y = Y_DIV[y];
+            //スレッド数以上の並列度があれば計測
+            if (band.block_count_x * band.block_count_y >= band.current_thread_num) {
+                //一度、フレームデータをキャッシュから追い出してから計測
+                fp->exfunc->exec_multi_thread_func(multi_thread_func_dummy, nullptr, nullptr);
+                //計測開始
+                QueryPerformanceCounter((LARGE_INTEGER *)&nStart);
+                fp->exfunc->exec_multi_thread_func(multi_thread_func, fp, fpip);
+                QueryPerformanceCounter((LARGE_INTEGER *)&nFin);
+                int64_t key = gen_key(sample_mode, band.block_count_y, band.block_count_x);
+                check_ms[key] += (nFin - nStart) * 1000.0 / (double)nFreq;
+            }
+        }
+    }
+    check_count++;
+    if (check_count % 256 == 0) {
+        FILE *fpout = NULL;
+        if (0 == fopen_s(&fpout, "bandingSIMD_perf_check.csv", "w")) {
+            fprintf(fpout, "w,%d,h,%d,count,%d\n", fpip->w, fpip->h, check_count);
+            for (int x = 0; x < _countof(X_DIV); x++) {
+                fprintf(fpout, ",%d", X_DIV[x]);
+            }
+            fprintf(fpout, "\n");
+            for (int y = 0; y < _countof(Y_DIV); y++) {
+                fprintf(fpout, "%d,", Y_DIV[y]);
+                for (int x = 0; x < _countof(X_DIV); x++) {
+                    int64_t key = gen_key(sample_mode, Y_DIV[y], X_DIV[x]);
+                    //値があれば出力
+                    if (check_ms.count(key)) {
+                        fprintf(fpout, "%.4f,", check_ms[key] / check_count);
+                    } else {
+                        fprintf(fpout, ",");
+                    }
+                }
+                fprintf(fpout, "\n");
+            }
+            fclose(fpout);
+        }
+    }
+}
+#endif
+
 //---------------------------------------------------------------------
 //        フィルタ処理関数
 //---------------------------------------------------------------------
@@ -193,9 +291,15 @@ BOOL func_proc( FILTER *fp, FILTER_PROC_INFO *fpip )
         band._seed = seed;
         init_gen_rand();
     }
+    band.block_count_x = (fpip->w + 127) / 128;
+    band.block_count_y = band.current_thread_num;
     
     //    マルチスレッドでフィルタ処理関数を呼ぶ
     fp->exfunc->exec_multi_thread_func(multi_thread_func, fp, fpip);
+
+#if BANDING_PERF_CHECK
+    band_perf_check(fp, fpip);
+#endif
 
     //    もし画像領域ポインタの入れ替えや解像度変更等の
     //    fpip の内容を変える場合はこちらの関数内で処理をする

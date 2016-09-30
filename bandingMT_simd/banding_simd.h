@@ -336,9 +336,9 @@ static void __forceinline decrease_banding_mode0_simd(int thread_id, int thread_
     const int  threshold_y     = fp->track[1] << (!(sample_mode && blur_first) + 1);
     const int  threshold_cb    = fp->track[2] << (!(sample_mode && blur_first) + 1);
     const int  threshold_cr    = fp->track[3] << (!(sample_mode && blur_first) + 1);
-    const int y_start = ( height *  thread_id    ) / thread_num;
-    const int y_end   = ( height * (thread_id+1) ) / thread_num;
-    __m128i xRefMulti = _mm_unpacklo_epi16(_mm_set1_epi16(max_w), xOne);
+    const int  b_start = (band.block_count_x * band.block_count_y *  thread_id) / thread_num;
+    const int  b_end   = (band.block_count_x * band.block_count_y * (thread_id+1)) / thread_num;
+    __m128i xRefMulti  = _mm_unpacklo_epi16(_mm_set1_epi16(max_w), xOne);
     
     char     __declspec(align(16)) ref[16];
     PIXEL_YC __declspec(align(16)) ycp_buffer[8];
@@ -352,115 +352,119 @@ static void __forceinline decrease_banding_mode0_simd(int thread_id, int thread_
     }
     xor514_t gen_rand;
     if (!rand_each_frame) {
-        xor514_init(&gen_rand, seed + (y_start << 2));
+        xor514_init(&gen_rand, seed + (b_start << 4));
     } else {
         gen_rand = band.gen_rand[thread_id];
     }
-    
-    int y;
-    const int y_main_end = min(y_end, height - 1);
-    for (y = y_start; y < y_main_end; y++) {
-        PIXEL_YC *ycp_src = fpip->ycp_edit + y * max_w;
-        PIXEL_YC *ycp_dst = fpip->ycp_temp + y * max_w;
-        __m128i xRangeYLimit = _mm_set1_epi16(min3(range, y, height - y - 1));
-        __m128i xRangeXLimit0 = _mm_load_si128((__m128i*)x_range_offset);
-        __m128i xRangeXLimit1 = _mm_subs_epu16(_mm_set1_epi16(width - 1), _mm_load_si128((__m128i*)x_range_offset));
-        createRandsimd_0(ref, &gen_rand, xRangeYLimit, xRangeXLimit0, xRangeXLimit1, simd);
-        for (int i_step = 0, x = width - 8; x >= 0; x -= i_step, ycp_src += i_step, ycp_dst += i_step) {
-            __m128i xRef = _mm_loadu_si128((__m128i*)ref);
-            if (process_per_field)
-                xRef = apply_field_mask_128(xRef, TRUE, simd);
-            __m128i xRefLower = cvtlo_epi8_epi16(xRef);
-            __m128i xRefUpper = cvthi_epi8_epi16(xRef);
 
-            xRefLower = _mm_add_epi32(_mm_madd_epi16(xRefLower, xRefMulti), _mm_load_si128((__m128i*)&ref_offset[0]));
-            xRefUpper = _mm_add_epi32(_mm_madd_epi16(xRefUpper, xRefMulti), _mm_load_si128((__m128i*)&ref_offset[4]));
+    for (int ib = b_start; ib < b_end; ib++) {
+        int x_start, x_end, y_start, y_end;
+        band_get_block_range(ib, width, height, &x_start, &x_end, &y_start, &y_end);
+        int y;
+        const int y_main_end = min(y_end, height - 1);
+        for (y = y_start; y < y_main_end; y++) {
+            PIXEL_YC *ycp_src = fpip->ycp_edit + y * max_w + x_start;
+            PIXEL_YC *ycp_dst = fpip->ycp_temp + y * max_w + x_start;
+            __m128i xRangeYLimit = _mm_set1_epi16(min3(range, y, height - y - 1));
+            __m128i xRangeXLimit0 = _mm_add_epi16(_mm_load_si128((__m128i*)x_range_offset), _mm_set1_epi16(x_start));
+            __m128i xRangeXLimit1 = _mm_subs_epu16(_mm_set1_epi16(width - x_start - 1), _mm_load_si128((__m128i*)x_range_offset));
+            createRandsimd_0(ref, &gen_rand, xRangeYLimit, xRangeXLimit0, xRangeXLimit1, simd);
+            for (int i_step = 0, x = (x_end - x_start) - 8; x >= 0; x -= i_step, ycp_src += i_step, ycp_dst += i_step) {
+                __m128i xRef = _mm_loadu_si128((__m128i*)ref);
+                if (process_per_field)
+                    xRef = apply_field_mask_128(xRef, TRUE, simd);
+                __m128i xRefLower = cvtlo_epi8_epi16(xRef);
+                __m128i xRefUpper = cvthi_epi8_epi16(xRef);
 
-            _mm_store_si128((__m128i*)&ref_buffer[0], _mm_multi6_epi32(xRefLower));
-            _mm_store_si128((__m128i*)&ref_buffer[4], _mm_multi6_epi32(xRefUpper));
+                xRefLower = _mm_add_epi32(_mm_madd_epi16(xRefLower, xRefMulti), _mm_load_si128((__m128i*)&ref_offset[0]));
+                xRefUpper = _mm_add_epi32(_mm_madd_epi16(xRefUpper, xRefMulti), _mm_load_si128((__m128i*)&ref_offset[4]));
 
-            if (simd & SSSE3) {
+                _mm_store_si128((__m128i*)&ref_buffer[0], _mm_multi6_epi32(xRefLower));
+                _mm_store_si128((__m128i*)&ref_buffer[4], _mm_multi6_epi32(xRefUpper));
 
-                __m64 m0, m1, m2, m3, m4, m5, m6, m7;
-                m1 = *(__m64*)((BYTE *)ycp_src + ref_buffer[1]);
-                m2 = *(__m64*)((BYTE *)ycp_src + ref_buffer[2]);
-                m3 = *(__m64*)((BYTE *)ycp_src + ref_buffer[3]);
-                m5 = *(__m64*)((BYTE *)ycp_src + ref_buffer[5]);
-                m6 = *(__m64*)((BYTE *)ycp_src + ref_buffer[6]);
-                m7 = *(__m64*)((BYTE *)ycp_src + ref_buffer[7]);
-                m0 = m2;
-                m4 = m6;
-                m0 = _mm_slli_si64(m0, 16);
-                m4 = _mm_slli_si64(m4, 16);
-                m3 = _mm_alignr_pi8(m3, m0, 6);
-                m7 = _mm_alignr_pi8(m7, m4, 6);
-                *(__m64 *)((BYTE *)ycp_buffer + 16) = m3;
-                *(__m64 *)((BYTE *)ycp_buffer + 40) = m7;
-                m0 = m1;
-                m4 = m5;
-                m0 = _mm_slli_si64(m0, 16);
-                m4 = _mm_slli_si64(m4, 16);
-                m2 = _mm_alignr_pi8(m2, m0, 4);
-                m6 = _mm_alignr_pi8(m6, m4, 4);
-                m3 = *(__m64*)((BYTE *)ycp_src + ref_buffer[0]);
-                m7 = *(__m64*)((BYTE *)ycp_src + ref_buffer[4]);
-                *(__m64 *)((BYTE *)ycp_buffer +  8) = m2;
-                *(__m64 *)((BYTE *)ycp_buffer + 32) = m6;
-                m3 = _mm_slli_si64(m3, 16);
-                m7 = _mm_slli_si64(m7, 16);
-                m1 = _mm_alignr_pi8(m1, m3, 2);
-                m5 = _mm_alignr_pi8(m5, m7, 2);
-                *(__m64 *)((BYTE *)ycp_buffer +  0) = m1;
-                *(__m64 *)((BYTE *)ycp_buffer + 24) = m5;
+                if (simd & SSSE3) {
 
-            } else {
+                    __m64 m0, m1, m2, m3, m4, m5, m6, m7;
+                    m1 = *(__m64*)((BYTE *)ycp_src + ref_buffer[1]);
+                    m2 = *(__m64*)((BYTE *)ycp_src + ref_buffer[2]);
+                    m3 = *(__m64*)((BYTE *)ycp_src + ref_buffer[3]);
+                    m5 = *(__m64*)((BYTE *)ycp_src + ref_buffer[5]);
+                    m6 = *(__m64*)((BYTE *)ycp_src + ref_buffer[6]);
+                    m7 = *(__m64*)((BYTE *)ycp_src + ref_buffer[7]);
+                    m0 = m2;
+                    m4 = m6;
+                    m0 = _mm_slli_si64(m0, 16);
+                    m4 = _mm_slli_si64(m4, 16);
+                    m3 = _mm_alignr_pi8(m3, m0, 6);
+                    m7 = _mm_alignr_pi8(m7, m4, 6);
+                    *(__m64 *)((BYTE *)ycp_buffer + 16) = m3;
+                    *(__m64 *)((BYTE *)ycp_buffer + 40) = m7;
+                    m0 = m1;
+                    m4 = m5;
+                    m0 = _mm_slli_si64(m0, 16);
+                    m4 = _mm_slli_si64(m4, 16);
+                    m2 = _mm_alignr_pi8(m2, m0, 4);
+                    m6 = _mm_alignr_pi8(m6, m4, 4);
+                    m3 = *(__m64*)((BYTE *)ycp_src + ref_buffer[0]);
+                    m7 = *(__m64*)((BYTE *)ycp_src + ref_buffer[4]);
+                    *(__m64 *)((BYTE *)ycp_buffer +  8) = m2;
+                    *(__m64 *)((BYTE *)ycp_buffer + 32) = m6;
+                    m3 = _mm_slli_si64(m3, 16);
+                    m7 = _mm_slli_si64(m7, 16);
+                    m1 = _mm_alignr_pi8(m1, m3, 2);
+                    m5 = _mm_alignr_pi8(m5, m7, 2);
+                    *(__m64 *)((BYTE *)ycp_buffer +  0) = m1;
+                    *(__m64 *)((BYTE *)ycp_buffer + 24) = m5;
 
-                ycp_buffer[ 0] = *(PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[0]);
-                ycp_buffer[ 1] = *(PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[1]);
-                ycp_buffer[ 2] = *(PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[2]);
-                ycp_buffer[ 3] = *(PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[3]);
-                ycp_buffer[ 4] = *(PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[4]);
-                ycp_buffer[ 5] = *(PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[5]);
-                ycp_buffer[ 6] = *(PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[6]);
-                ycp_buffer[ 7] = *(PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[7]);
+                } else {
 
+                    ycp_buffer[0] = *(PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[0]);
+                    ycp_buffer[1] = *(PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[1]);
+                    ycp_buffer[2] = *(PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[2]);
+                    ycp_buffer[3] = *(PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[3]);
+                    ycp_buffer[4] = *(PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[4]);
+                    ycp_buffer[5] = *(PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[5]);
+                    ycp_buffer[6] = *(PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[6]);
+                    ycp_buffer[7] = *(PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[7]);
+
+                }
+                createRandsimd_3(ref, &gen_rand, xRangeYLimit, xRangeXLimit0, xRangeXLimit1, simd);
+
+                __m128i xYCPRef0, xYCPDiff, xYCP, xThreshold, xBase, xMask;
+
+                xYCPRef0 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer +   0));
+                xYCP     = _mm_loadu_si128((__m128i*)((BYTE *)ycp_src +  0));
+                xYCPDiff = abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPRef0));
+                xThreshold = _mm_load_si128((__m128i*)(threshold +  0));
+                xMask    = _mm_cmpgt_epi16(xThreshold, xYCPDiff); //(a > b) ? 0xffff : 0x0000;
+                xBase    = blendv_epi8_simd(xYCP, xYCPRef0, xMask);  //r = (mask0 & 0xff) ? b : a
+                _mm_storeu_si128((__m128i*)((BYTE *)ycp_dst +  0), xBase);
+
+
+                xYCPRef0 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer +  16));
+                xYCP     = _mm_loadu_si128((__m128i*)((BYTE *)ycp_src + 16));
+                xYCPDiff = abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPRef0));
+                xThreshold = _mm_load_si128((__m128i*)(threshold +  8));
+                xMask    = _mm_cmpgt_epi16(xThreshold, xYCPDiff); //(a > b) ? 0xffff : 0x0000;
+                xBase    = blendv_epi8_simd(xYCP, xYCPRef0, xMask);  //r = (mask0 & 0xff) ? b : a
+                _mm_storeu_si128((__m128i*)((BYTE *)ycp_dst + 16), xBase);
+
+
+                xYCPRef0 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer + 32));
+                xYCP     = _mm_loadu_si128((__m128i*)((BYTE *)ycp_src + 32));
+                xYCPDiff = abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPRef0));
+                xThreshold = _mm_load_si128((__m128i*)(threshold + 16));
+                xMask    = _mm_cmpgt_epi16(xThreshold, xYCPDiff); //(a > b) ? 0xffff : 0x0000;
+                xBase    = blendv_epi8_simd(xYCP, xYCPRef0, xMask);  //r = (mask0 & 0xff) ? b : a
+                _mm_storeu_si128((__m128i*)((BYTE *)ycp_dst + 32), xBase);
+
+                i_step = limit_1_to_8(x);
             }
-            createRandsimd_3(ref, &gen_rand, xRangeYLimit, xRangeXLimit0, xRangeXLimit1, simd);
-
-            __m128i xYCPRef0, xYCPDiff, xYCP, xThreshold, xBase, xMask;
-
-            xYCPRef0 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer +   0));
-            xYCP     = _mm_loadu_si128((__m128i*)((BYTE *)ycp_src +  0));
-            xYCPDiff = abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPRef0));
-            xThreshold = _mm_load_si128((__m128i*)(threshold +  0));
-            xMask    = _mm_cmpgt_epi16(xThreshold, xYCPDiff); //(a > b) ? 0xffff : 0x0000;
-            xBase    = blendv_epi8_simd(xYCP, xYCPRef0, xMask);  //r = (mask0 & 0xff) ? b : a
-            _mm_storeu_si128((__m128i*)((BYTE *)ycp_dst +  0), xBase);
-        
-        
-            xYCPRef0 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer +  16));
-            xYCP     = _mm_loadu_si128((__m128i*)((BYTE *)ycp_src + 16));
-            xYCPDiff = abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPRef0));
-            xThreshold = _mm_load_si128((__m128i*)(threshold +  8));
-            xMask    = _mm_cmpgt_epi16(xThreshold, xYCPDiff); //(a > b) ? 0xffff : 0x0000;
-            xBase    = blendv_epi8_simd(xYCP, xYCPRef0, xMask);  //r = (mask0 & 0xff) ? b : a
-            _mm_storeu_si128((__m128i*)((BYTE *)ycp_dst + 16), xBase);
-
-
-            xYCPRef0 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer + 32));
-            xYCP     = _mm_loadu_si128((__m128i*)((BYTE *)ycp_src + 32));
-            xYCPDiff = abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPRef0));
-            xThreshold = _mm_load_si128((__m128i*)(threshold + 16));
-            xMask    = _mm_cmpgt_epi16(xThreshold, xYCPDiff); //(a > b) ? 0xffff : 0x0000;
-            xBase    = blendv_epi8_simd(xYCP, xYCPRef0, xMask);  //r = (mask0 & 0xff) ? b : a
-            _mm_storeu_si128((__m128i*)((BYTE *)ycp_dst + 32), xBase);
-
-            i_step = limit_1_to_8(x);
         }
+        //最後のライン
+        if (y < y_end)
+            sse2_memcpy((BYTE *)(fpip->ycp_temp + y * max_w + x_start), (BYTE *)(fpip->ycp_edit + y * max_w + x_start), (x_end - x_start) * 6);
     }
-    //最後のライン
-    if (y < y_end)
-        sse2_memcpy((BYTE *)(fpip->ycp_temp + y * max_w), (BYTE *)(fpip->ycp_edit + y * max_w), width * 6);
     _mm_empty();
     band.gen_rand[thread_id] = gen_rand;
 }
@@ -578,9 +582,9 @@ static void __forceinline decrease_banding_mode1_simd(int thread_id, int thread_
     const int  threshold_y     = fp->track[1] << (!(sample_mode && blur_first) + 1);
     const int  threshold_cb    = fp->track[2] << (!(sample_mode && blur_first) + 1);
     const int  threshold_cr    = fp->track[3] << (!(sample_mode && blur_first) + 1);
-    const int  y_start         = ( height *  thread_id    ) / thread_num;
-    const int  y_end           = ( height * (thread_id+1) ) / thread_num;
-    __m128i xRefMulti = _mm_unpacklo_epi16(_mm_set1_epi16(max_w), xOne);
+    const int  b_start = (band.block_count_x * band.block_count_y *  thread_id) / thread_num;
+    const int  b_end   = (band.block_count_x * band.block_count_y * (thread_id+1)) / thread_num;
+    __m128i xRefMulti  = _mm_unpacklo_epi16(_mm_set1_epi16(max_w), xOne);
     
     char     __declspec(align(16)) ref[16];
     short    __declspec(align(16)) dither[24];
@@ -616,110 +620,114 @@ static void __forceinline decrease_banding_mode1_simd(int thread_id, int thread_
     }
     xor514_t gen_rand;
     if (!rand_each_frame) {
-        xor514_init(&gen_rand, seed + (y_start << 2));
+        xor514_init(&gen_rand, seed + (b_start << 4));
     } else {
         gen_rand = band.gen_rand[thread_id];
     }
-    
-    int y;
-    const int y_main_end = min(y_end, height - 1);
-    for (y = y_start; y < y_main_end; y++) {
-        PIXEL_YC *ycp_src = fpip->ycp_edit + y * max_w;
-        PIXEL_YC *ycp_dst = fpip->ycp_temp + y * max_w;
-        __m128i xRangeYLimit = _mm_set1_epi16(min3(range, y, height - y - 1));
-        __m128i xRangeXLimit0 = _mm_load_si128((__m128i*)x_range_offset);
-        __m128i xRangeXLimit1 = _mm_subs_epu16(_mm_set1_epi16(width - 1), _mm_load_si128((__m128i*)x_range_offset));
-        createRandsimd_0(ref, &gen_rand, xRangeYLimit, xRangeXLimit0, xRangeXLimit1, simd);
-        for (int i_step = 0, x = width - 8; x >= 0; x -= i_step, ycp_src += i_step, ycp_dst += i_step) {
-            __m128i xRef = _mm_loadu_si128((__m128i*)ref);
-            if (process_per_field)
-                xRef = apply_field_mask_128(xRef, TRUE, simd);
-            __m128i xRefLower = cvtlo_epi8_epi16(xRef);
-            __m128i xRefUpper = cvthi_epi8_epi16(xRef);
 
-            xRefLower = _mm_add_epi32(_mm_madd_epi16(xRefLower, xRefMulti), _mm_load_si128((__m128i*)&ref_offset[0]));
-            xRefUpper = _mm_add_epi32(_mm_madd_epi16(xRefUpper, xRefMulti), _mm_load_si128((__m128i*)&ref_offset[4]));
+    for (int ib = b_start; ib < b_end; ib++) {
+        int x_start, x_end, y_start, y_end;
+        band_get_block_range(ib, width, height, &x_start, &x_end, &y_start, &y_end);
+        int y;
+        const int y_main_end = min(y_end, height - 1);
+        for (y = y_start; y < y_main_end; y++) {
+            PIXEL_YC *ycp_src = fpip->ycp_edit + y * max_w + x_start;
+            PIXEL_YC *ycp_dst = fpip->ycp_temp + y * max_w + x_start;
+            __m128i xRangeYLimit = _mm_set1_epi16(min3(range, y, height - y - 1));
+            __m128i xRangeXLimit0 = _mm_add_epi16(_mm_load_si128((__m128i*)x_range_offset), _mm_set1_epi16(x_start));
+            __m128i xRangeXLimit1 = _mm_subs_epu16(_mm_set1_epi16(width - x_start - 1), _mm_load_si128((__m128i*)x_range_offset));
+            createRandsimd_0(ref, &gen_rand, xRangeYLimit, xRangeXLimit0, xRangeXLimit1, simd);
+            for (int i_step = 0, x = (x_end - x_start) - 8; x >= 0; x -= i_step, ycp_src += i_step, ycp_dst += i_step) {
+                __m128i xRef = _mm_loadu_si128((__m128i*)ref);
+                if (process_per_field)
+                    xRef = apply_field_mask_128(xRef, TRUE, simd);
+                __m128i xRefLower = cvtlo_epi8_epi16(xRef);
+                __m128i xRefUpper = cvthi_epi8_epi16(xRef);
 
-            _mm_store_si128((__m128i*)&ref_buffer[0], _mm_multi6_epi32(xRefLower));
-            _mm_store_si128((__m128i*)&ref_buffer[4], _mm_multi6_epi32(xRefUpper));
+                xRefLower = _mm_add_epi32(_mm_madd_epi16(xRefLower, xRefMulti), _mm_load_si128((__m128i*)&ref_offset[0]));
+                xRefUpper = _mm_add_epi32(_mm_madd_epi16(xRefUpper, xRefMulti), _mm_load_si128((__m128i*)&ref_offset[4]));
+
+                _mm_store_si128((__m128i*)&ref_buffer[0], _mm_multi6_epi32(xRefLower));
+                _mm_store_si128((__m128i*)&ref_buffer[4], _mm_multi6_epi32(xRefUpper));
 
 
-            gather1(ycp_buffer, ycp_src, ref_buffer, simd);
-            createRandsimd_1(dither, &gen_rand, ditherYC2, ditherYC);
+                gather1(ycp_buffer, ycp_src, ref_buffer, simd);
+                createRandsimd_1(dither, &gen_rand, ditherYC2, ditherYC);
 
-            __m128i xYCPRef0, xYCPRef1, xYCPAvg, xYCPDiff, xYCP, xThreshold, xBase, xMask, xDither;
+                __m128i xYCPRef0, xYCPRef1, xYCPAvg, xYCPDiff, xYCP, xThreshold, xBase, xMask, xDither;
 
-            xYCPRef0 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer +   0));
-            xYCPRef1 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer +  48));
-            xYCPAvg  = _mm_srai_epi16(_mm_adds_epi16(_mm_adds_epi16(xYCPRef0, xYCPRef1), xOne), 1);
-            xYCP     = _mm_loadu_si128((__m128i*)((BYTE *)ycp_src +  0));
-            xYCPDiff = (blur_first) ? abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPAvg))
-                                    : _mm_max_epi16(abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPRef0)),
-                                                    abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPRef1)) );
-            xThreshold = _mm_load_si128((__m128i*)(threshold +  0));
-            xMask    = _mm_cmpgt_epi16(xThreshold, xYCPDiff); //(a > b) ? 0xffff : 0x0000;
-            xBase    = blendv_epi8_simd(xYCP, xYCPAvg, xMask);  //r = (mask0 & 0xff) ? b : a
-            xDither  = _mm_load_si128((__m128i *)(dither +  0));
-            xYCP     = _mm_adds_epi16(xBase, xDither);
-            _mm_storeu_si128((__m128i*)((BYTE *)ycp_dst +  0), xYCP);
-            
-            
-            gather2(ycp_buffer, ycp_src, ref_buffer, simd);
-            createRandsimd_2(dither, ref, &gen_rand, ditherYC2, ditherYC, xRangeYLimit, xRangeXLimit0, xRangeXLimit1, simd);
+                xYCPRef0 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer +   0));
+                xYCPRef1 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer +  48));
+                xYCPAvg  = _mm_srai_epi16(_mm_adds_epi16(_mm_adds_epi16(xYCPRef0, xYCPRef1), xOne), 1);
+                xYCP     = _mm_loadu_si128((__m128i*)((BYTE *)ycp_src +  0));
+                xYCPDiff = (blur_first) ? abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPAvg))
+                    : _mm_max_epi16(abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPRef0)),
+                        abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPRef1)));
+                xThreshold = _mm_load_si128((__m128i*)(threshold +  0));
+                xMask    = _mm_cmpgt_epi16(xThreshold, xYCPDiff); //(a > b) ? 0xffff : 0x0000;
+                xBase    = blendv_epi8_simd(xYCP, xYCPAvg, xMask);  //r = (mask0 & 0xff) ? b : a
+                xDither  = _mm_load_si128((__m128i *)(dither +  0));
+                xYCP     = _mm_adds_epi16(xBase, xDither);
+                _mm_storeu_si128((__m128i*)((BYTE *)ycp_dst +  0), xYCP);
 
-            xYCPRef0 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer +  16));
-            xYCPRef1 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer +  64));
-            xYCPAvg  = _mm_srai_epi16(_mm_adds_epi16(_mm_adds_epi16(xYCPRef0, xYCPRef1), xOne), 1);
-            xYCP     = _mm_loadu_si128((__m128i*)((BYTE *)ycp_src + 16));
-            xYCPDiff = (blur_first) ? abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPAvg))
-                                    : _mm_max_epi16(abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPRef0)),
-                                                    abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPRef1)) );
-            xThreshold = _mm_load_si128((__m128i*)(threshold +  8));
-            xMask    = _mm_cmpgt_epi16(xThreshold, xYCPDiff); //(a > b) ? 0xffff : 0x0000;
-            xBase    = blendv_epi8_simd(xYCP, xYCPAvg, xMask);  //r = (mask0 & 0xff) ? b : a
-            xDither  = _mm_load_si128((__m128i *)(dither +  8));
-            xYCP     = _mm_adds_epi16(xBase, xDither);
-            _mm_storeu_si128((__m128i*)((BYTE *)ycp_dst + 16), xYCP);
-            
-            
 
-            xYCPRef0 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer +  32));
-            xYCPRef1 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer +  80));
-            xYCPAvg  = _mm_srai_epi16(_mm_adds_epi16(_mm_adds_epi16(xYCPRef0, xYCPRef1), xOne), 1);
-            xYCP     = _mm_loadu_si128((__m128i*)((BYTE *)ycp_src + 32));
-            xYCPDiff = (blur_first) ? abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPAvg))
-                                    : _mm_max_epi16(abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPRef0)),
-                                                    abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPRef1)) );
-            xThreshold = _mm_load_si128((__m128i*)(threshold + 16));
-            xMask    = _mm_cmpgt_epi16(xThreshold, xYCPDiff); //(a > b) ? 0xffff : 0x0000;
-            xBase    = blendv_epi8_simd(xYCP, xYCPAvg, xMask);  //r = (mask0 & 0xff) ? b : a
-            xDither  = _mm_load_si128((__m128i *)(dither + 16));
-            xYCP     = _mm_adds_epi16(xBase, xDither);
-            _mm_storeu_si128((__m128i*)((BYTE *)ycp_dst + 32), xYCP);
+                gather2(ycp_buffer, ycp_src, ref_buffer, simd);
+                createRandsimd_2(dither, ref, &gen_rand, ditherYC2, ditherYC, xRangeYLimit, xRangeXLimit0, xRangeXLimit1, simd);
 
-            i_step = limit_1_to_8(x);
+                xYCPRef0 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer +  16));
+                xYCPRef1 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer +  64));
+                xYCPAvg  = _mm_srai_epi16(_mm_adds_epi16(_mm_adds_epi16(xYCPRef0, xYCPRef1), xOne), 1);
+                xYCP     = _mm_loadu_si128((__m128i*)((BYTE *)ycp_src + 16));
+                xYCPDiff = (blur_first) ? abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPAvg))
+                    : _mm_max_epi16(abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPRef0)),
+                        abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPRef1)));
+                xThreshold = _mm_load_si128((__m128i*)(threshold +  8));
+                xMask    = _mm_cmpgt_epi16(xThreshold, xYCPDiff); //(a > b) ? 0xffff : 0x0000;
+                xBase    = blendv_epi8_simd(xYCP, xYCPAvg, xMask);  //r = (mask0 & 0xff) ? b : a
+                xDither  = _mm_load_si128((__m128i *)(dither +  8));
+                xYCP     = _mm_adds_epi16(xBase, xDither);
+                _mm_storeu_si128((__m128i*)((BYTE *)ycp_dst + 16), xYCP);
+
+
+
+                xYCPRef0 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer +  32));
+                xYCPRef1 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer +  80));
+                xYCPAvg  = _mm_srai_epi16(_mm_adds_epi16(_mm_adds_epi16(xYCPRef0, xYCPRef1), xOne), 1);
+                xYCP     = _mm_loadu_si128((__m128i*)((BYTE *)ycp_src + 32));
+                xYCPDiff = (blur_first) ? abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPAvg))
+                    : _mm_max_epi16(abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPRef0)),
+                        abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPRef1)));
+                xThreshold = _mm_load_si128((__m128i*)(threshold + 16));
+                xMask    = _mm_cmpgt_epi16(xThreshold, xYCPDiff); //(a > b) ? 0xffff : 0x0000;
+                xBase    = blendv_epi8_simd(xYCP, xYCPAvg, xMask);  //r = (mask0 & 0xff) ? b : a
+                xDither  = _mm_load_si128((__m128i *)(dither + 16));
+                xYCP     = _mm_adds_epi16(xBase, xDither);
+                _mm_storeu_si128((__m128i*)((BYTE *)ycp_dst + 32), xYCP);
+
+                i_step = limit_1_to_8(x);
+            }
         }
-    }
-    //最後のライン
-    if (y < y_end) {
-        PIXEL_YC *ycp_src = fpip->ycp_edit + y * max_w;
-        PIXEL_YC *ycp_dst = fpip->ycp_temp + y * max_w;
-        for (int i_step = 0, x = width - 8; x >= 0; x -= i_step, ycp_src += i_step, ycp_dst += i_step) {
+        //最後のライン
+        if (y < y_end) {
+            PIXEL_YC *ycp_src = fpip->ycp_edit + y * max_w + x_start;
+            PIXEL_YC *ycp_dst = fpip->ycp_temp + y * max_w + x_start;
+            for (int i_step = 0, x = (x_end - x_start) - 8; x >= 0; x -= i_step, ycp_src += i_step, ycp_dst += i_step) {
 
-            __m128i xYCP0, xYCP1, xYCP2, xDither0, xDither1, xDither2;
-            createRandsimd_4(&gen_rand, ditherYC2, ditherYC, xDither0, xDither1, xDither2);
+                __m128i xYCP0, xYCP1, xYCP2, xDither0, xDither1, xDither2;
+                createRandsimd_4(&gen_rand, ditherYC2, ditherYC, xDither0, xDither1, xDither2);
 
-            xYCP0    = _mm_loadu_si128((__m128i*)((BYTE *)ycp_src +  0));
-            xYCP1    = _mm_loadu_si128((__m128i*)((BYTE *)ycp_src + 16));
-            xYCP2    = _mm_loadu_si128((__m128i*)((BYTE *)ycp_src + 32));
-            xYCP0    = _mm_adds_epi16(xYCP0, xDither0);
-            xYCP1    = _mm_adds_epi16(xYCP1, xDither1);
-            xYCP2    = _mm_adds_epi16(xYCP2, xDither2);
-            _mm_storeu_si128((__m128i*)((BYTE *)ycp_dst +  0), xYCP0);
-            _mm_storeu_si128((__m128i*)((BYTE *)ycp_dst + 16), xYCP1);
-            _mm_storeu_si128((__m128i*)((BYTE *)ycp_dst + 32), xYCP2);
+                xYCP0    = _mm_loadu_si128((__m128i*)((BYTE *)ycp_src +  0));
+                xYCP1    = _mm_loadu_si128((__m128i*)((BYTE *)ycp_src + 16));
+                xYCP2    = _mm_loadu_si128((__m128i*)((BYTE *)ycp_src + 32));
+                xYCP0    = _mm_adds_epi16(xYCP0, xDither0);
+                xYCP1    = _mm_adds_epi16(xYCP1, xDither1);
+                xYCP2    = _mm_adds_epi16(xYCP2, xDither2);
+                _mm_storeu_si128((__m128i*)((BYTE *)ycp_dst +  0), xYCP0);
+                _mm_storeu_si128((__m128i*)((BYTE *)ycp_dst + 16), xYCP1);
+                _mm_storeu_si128((__m128i*)((BYTE *)ycp_dst + 32), xYCP2);
 
-            i_step = limit_1_to_8(x);
+                i_step = limit_1_to_8(x);
+            }
         }
     }
     _mm_empty();
@@ -741,8 +749,8 @@ static void __forceinline decrease_banding_mode2_simd(int thread_id, int thread_
     const int  threshold_y     = fp->track[1] << (!(sample_mode && blur_first) + 1);
     const int  threshold_cb    = fp->track[2] << (!(sample_mode && blur_first) + 1);
     const int  threshold_cr    = fp->track[3] << (!(sample_mode && blur_first) + 1);
-    const int  y_start         = ( height *  thread_id    ) / thread_num;
-    const int  y_end           = ( height * (thread_id+1) ) / thread_num;
+    const int  b_start = (band.block_count_x * band.block_count_y *  thread_id) / thread_num;
+    const int  b_end   = (band.block_count_x * band.block_count_y * (thread_id+1)) / thread_num;
     __m128i xRefMulti  = _mm_unpacklo_epi16(_mm_set1_epi16(max_w), xOne);
     __m128i xRefMulti2 = _mm_unpacklo_epi16(xOne, _mm_set1_epi16(-max_w));
     
@@ -780,143 +788,147 @@ static void __forceinline decrease_banding_mode2_simd(int thread_id, int thread_
     }
     xor514_t gen_rand;
     if (!rand_each_frame) {
-        xor514_init(&gen_rand, seed + (y_start << 2));
+        xor514_init(&gen_rand, seed + (b_start << 4));
     } else {
         gen_rand = band.gen_rand[thread_id];
     }
-    
-    int y;
-    const int y_main_end = min(y_end, height - 1);
-    for (y = y_start; y < y_main_end; y++) {
-        PIXEL_YC *ycp_src = fpip->ycp_edit + y * max_w;
-        PIXEL_YC *ycp_dst = fpip->ycp_temp + y * max_w;
-        __m128i xRangeYLimit = _mm_set1_epi16(min3(range, y, height - y - 1));
-        __m128i xRangeXLimit0 = _mm_load_si128((__m128i*)x_range_offset);
-        __m128i xRangeXLimit1 = _mm_subs_epu16(_mm_set1_epi16(width - 1), _mm_load_si128((__m128i*)x_range_offset));
-        createRandsimd_0(ref, &gen_rand, xRangeYLimit, xRangeXLimit0, xRangeXLimit1, simd);
-        for (int i_step = 0, x = width - 8; x >= 0; x -= i_step, ycp_src += i_step, ycp_dst += i_step) {
-            __m128i xRef = _mm_loadu_si128((__m128i*)ref);
-            if (process_per_field) {
-                __m128i xRef2 = apply_field_mask_128(xRef, TRUE, simd);
-                __m128i xRefLower = cvtlo_epi8_epi16(xRef2);
-                __m128i xRefUpper = cvthi_epi8_epi16(xRef2);
-            
-                _mm_store_si128((__m128i*)&ref_buffer[ 0], _mm_multi6_epi32(_mm_add_epi32(_mm_madd_epi16(xRefLower, xRefMulti), _mm_load_si128((__m128i*)&ref_offset[0]))));
-                _mm_store_si128((__m128i*)&ref_buffer[ 4], _mm_multi6_epi32(_mm_add_epi32(_mm_madd_epi16(xRefUpper, xRefMulti), _mm_load_si128((__m128i*)&ref_offset[4]))));
 
-                xRef2 = apply_field_mask_128(xRef, FALSE, simd);
-                xRefLower = cvtlo_epi8_epi16(xRef2);
-                xRefUpper = cvthi_epi8_epi16(xRef2);
+    for (int ib = b_start; ib < b_end; ib++) {
+        int x_start, x_end, y_start, y_end;
+        band_get_block_range(ib, width, height, &x_start, &x_end, &y_start, &y_end);
+        int y;
+        const int y_main_end = min(y_end, height - 1);
+        for (y = y_start; y < y_main_end; y++) {
+            PIXEL_YC *ycp_src = fpip->ycp_edit + y * max_w + x_start;
+            PIXEL_YC *ycp_dst = fpip->ycp_temp + y * max_w + x_start;
+            __m128i xRangeYLimit = _mm_set1_epi16(min3(range, y, height - y - 1));
+            __m128i xRangeXLimit0 = _mm_add_epi16(_mm_load_si128((__m128i*)x_range_offset), _mm_set1_epi16(x_start));
+            __m128i xRangeXLimit1 = _mm_subs_epu16(_mm_set1_epi16(width - x_start - 1), _mm_load_si128((__m128i*)x_range_offset));
+            createRandsimd_0(ref, &gen_rand, xRangeYLimit, xRangeXLimit0, xRangeXLimit1, simd);
+            for (int i_step = 0, x = (x_end - x_start) - 8; x >= 0; x -= i_step, ycp_src += i_step, ycp_dst += i_step) {
+                __m128i xRef = _mm_loadu_si128((__m128i*)ref);
+                if (process_per_field) {
+                    __m128i xRef2 = apply_field_mask_128(xRef, TRUE, simd);
+                    __m128i xRefLower = cvtlo_epi8_epi16(xRef2);
+                    __m128i xRefUpper = cvthi_epi8_epi16(xRef2);
 
-                _mm_store_si128((__m128i*)&ref_buffer[ 8], _mm_multi6_epi32(_mm_add_epi32(_mm_madd_epi16(xRefLower, xRefMulti2), _mm_load_si128((__m128i*)&ref_offset[0]))));
-                _mm_store_si128((__m128i*)&ref_buffer[12], _mm_multi6_epi32(_mm_add_epi32(_mm_madd_epi16(xRefUpper, xRefMulti2), _mm_load_si128((__m128i*)&ref_offset[4]))));
-            } else {
-                __m128i xRefLower = cvtlo_epi8_epi16(xRef);
-                __m128i xRefUpper = cvthi_epi8_epi16(xRef);
-            
-                _mm_store_si128((__m128i*)&ref_buffer[ 0], _mm_multi6_epi32(_mm_add_epi32(_mm_madd_epi16(xRefLower, xRefMulti), _mm_load_si128((__m128i*)&ref_offset[0]))));
-                _mm_store_si128((__m128i*)&ref_buffer[ 4], _mm_multi6_epi32(_mm_add_epi32(_mm_madd_epi16(xRefUpper, xRefMulti), _mm_load_si128((__m128i*)&ref_offset[4]))));
+                    _mm_store_si128((__m128i*)&ref_buffer[0], _mm_multi6_epi32(_mm_add_epi32(_mm_madd_epi16(xRefLower, xRefMulti), _mm_load_si128((__m128i*)&ref_offset[0]))));
+                    _mm_store_si128((__m128i*)&ref_buffer[4], _mm_multi6_epi32(_mm_add_epi32(_mm_madd_epi16(xRefUpper, xRefMulti), _mm_load_si128((__m128i*)&ref_offset[4]))));
 
-                _mm_store_si128((__m128i*)&ref_buffer[ 8], _mm_multi6_epi32(_mm_add_epi32(_mm_madd_epi16(xRefLower, xRefMulti2), _mm_load_si128((__m128i*)&ref_offset[0]))));
-                _mm_store_si128((__m128i*)&ref_buffer[12], _mm_multi6_epi32(_mm_add_epi32(_mm_madd_epi16(xRefUpper, xRefMulti2), _mm_load_si128((__m128i*)&ref_offset[4]))));
+                    xRef2 = apply_field_mask_128(xRef, FALSE, simd);
+                    xRefLower = cvtlo_epi8_epi16(xRef2);
+                    xRefUpper = cvthi_epi8_epi16(xRef2);
+
+                    _mm_store_si128((__m128i*)&ref_buffer[8], _mm_multi6_epi32(_mm_add_epi32(_mm_madd_epi16(xRefLower, xRefMulti2), _mm_load_si128((__m128i*)&ref_offset[0]))));
+                    _mm_store_si128((__m128i*)&ref_buffer[12], _mm_multi6_epi32(_mm_add_epi32(_mm_madd_epi16(xRefUpper, xRefMulti2), _mm_load_si128((__m128i*)&ref_offset[4]))));
+                } else {
+                    __m128i xRefLower = cvtlo_epi8_epi16(xRef);
+                    __m128i xRefUpper = cvthi_epi8_epi16(xRef);
+
+                    _mm_store_si128((__m128i*)&ref_buffer[0], _mm_multi6_epi32(_mm_add_epi32(_mm_madd_epi16(xRefLower, xRefMulti), _mm_load_si128((__m128i*)&ref_offset[0]))));
+                    _mm_store_si128((__m128i*)&ref_buffer[4], _mm_multi6_epi32(_mm_add_epi32(_mm_madd_epi16(xRefUpper, xRefMulti), _mm_load_si128((__m128i*)&ref_offset[4]))));
+
+                    _mm_store_si128((__m128i*)&ref_buffer[8], _mm_multi6_epi32(_mm_add_epi32(_mm_madd_epi16(xRefLower, xRefMulti2), _mm_load_si128((__m128i*)&ref_offset[0]))));
+                    _mm_store_si128((__m128i*)&ref_buffer[12], _mm_multi6_epi32(_mm_add_epi32(_mm_madd_epi16(xRefUpper, xRefMulti2), _mm_load_si128((__m128i*)&ref_offset[4]))));
+                }
+
+                gather1(ycp_buffer +  0, ycp_src, ref_buffer + 0, simd);
+                createRandsimd_1(dither, &gen_rand, ditherYC2, ditherYC);
+                gather1(ycp_buffer + 16, ycp_src, ref_buffer + 8, simd);
+
+                __m128i xYCPRef0, xYCPRef1, xYCPRef2, xYCPRef3;
+                __m128i xYCPAvg, xYCPDiff, xYCP, xThreshold, xBase, xMask, xDither;
+
+                xYCPRef0 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer +   0));
+                xYCPRef1 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer +  48));
+                xYCPRef2 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer +  96));
+                xYCPRef3 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer + 144));
+                xYCPAvg  = _mm_srai_epi16(_mm_adds_epi16(xTwo,
+                    _mm_adds_epi16(_mm_adds_epi16(xYCPRef0, xYCPRef1),
+                        _mm_adds_epi16(xYCPRef2, xYCPRef3))), 2);
+                xYCP     = _mm_loadu_si128((__m128i*)((BYTE *)ycp_src +  0));
+                xYCPDiff = (blur_first) ? abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPAvg))
+                    : _mm_max_epi16(_mm_max_epi16(abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPRef0)),
+                        abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPRef1))),
+                        _mm_max_epi16(abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPRef2)),
+                            abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPRef3))));
+                xThreshold = _mm_load_si128((__m128i*)(threshold +  0));
+                xMask    = _mm_cmpgt_epi16(xThreshold, xYCPDiff); //(a > b) ? 0xffff : 0x0000;
+                xBase    = blendv_epi8_simd(xYCP, xYCPAvg, xMask);  //r = (mask0 & 0xff) ? b : a
+                xDither  = _mm_load_si128((__m128i *)(dither +  0));
+                xYCP     = _mm_adds_epi16(xBase, xDither);
+                _mm_storeu_si128((__m128i*)((BYTE *)ycp_dst +  0), xYCP);
+
+                gather2(ycp_buffer +  0, ycp_src, ref_buffer + 0, simd);
+                createRandsimd_2(dither, ref, &gen_rand, ditherYC2, ditherYC, xRangeYLimit, xRangeXLimit0, xRangeXLimit1, simd);
+                gather2(ycp_buffer + 16, ycp_src, ref_buffer + 8, simd);
+
+                xYCPRef0 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer +  16));
+                xYCPRef1 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer +  64));
+                xYCPRef2 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer + 112));
+                xYCPRef3 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer + 160));
+                xYCPAvg  = _mm_srai_epi16(_mm_adds_epi16(xTwo,
+                    _mm_adds_epi16(_mm_adds_epi16(xYCPRef0, xYCPRef1),
+                        _mm_adds_epi16(xYCPRef2, xYCPRef3))), 2);
+                xYCP     = _mm_loadu_si128((__m128i*)((BYTE *)ycp_src + 16));
+                xYCPDiff = (blur_first) ? abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPAvg))
+                    : _mm_max_epi16(_mm_max_epi16(abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPRef0)),
+                        abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPRef1))),
+                        _mm_max_epi16(abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPRef2)),
+                            abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPRef3))));
+                xThreshold = _mm_load_si128((__m128i*)(threshold +  8));
+                xMask    = _mm_cmpgt_epi16(xThreshold, xYCPDiff); //(a > b) ? 0xffff : 0x0000;
+                xBase    = blendv_epi8_simd(xYCP, xYCPAvg, xMask);  //r = (mask0 & 0xff) ? b : a
+                xDither  = _mm_load_si128((__m128i *)(dither +  8));
+                xYCP     = _mm_adds_epi16(xBase, xDither);
+                _mm_storeu_si128((__m128i*)((BYTE *)ycp_dst + 16), xYCP);
+
+
+
+                xYCPRef0 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer +  32));
+                xYCPRef1 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer +  80));
+                xYCPRef2 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer + 128));
+                xYCPRef3 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer + 176));
+                xYCPAvg  = _mm_srai_epi16(_mm_adds_epi16(xTwo,
+                    _mm_adds_epi16(_mm_adds_epi16(xYCPRef0, xYCPRef1),
+                        _mm_adds_epi16(xYCPRef2, xYCPRef3))), 2);
+                xYCP     = _mm_loadu_si128((__m128i*)((BYTE *)ycp_src + 32));
+                xYCPDiff = (blur_first) ? abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPAvg))
+                    : _mm_max_epi16(_mm_max_epi16(abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPRef0)),
+                        abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPRef1))),
+                        _mm_max_epi16(abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPRef2)),
+                            abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPRef3))));
+                xThreshold = _mm_load_si128((__m128i*)(threshold + 16));
+                xMask    = _mm_cmpgt_epi16(xThreshold, xYCPDiff); //(a > b) ? 0xffff : 0x0000;
+                xBase    = blendv_epi8_simd(xYCP, xYCPAvg, xMask);  //r = (mask0 & 0xff) ? b : a
+                xDither  = _mm_load_si128((__m128i *)(dither + 16));
+                xYCP     = _mm_adds_epi16(xBase, xDither);
+                _mm_storeu_si128((__m128i*)((BYTE *)ycp_dst + 32), xYCP);
+
+                i_step = limit_1_to_8(x);
             }
-            
-            gather1(ycp_buffer +  0, ycp_src, ref_buffer + 0, simd);
-            createRandsimd_1(dither, &gen_rand, ditherYC2, ditherYC);
-            gather1(ycp_buffer + 16, ycp_src, ref_buffer + 8, simd);
-
-            __m128i xYCPRef0, xYCPRef1, xYCPRef2, xYCPRef3;
-            __m128i xYCPAvg, xYCPDiff, xYCP, xThreshold, xBase, xMask, xDither;
-
-            xYCPRef0 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer +   0));
-            xYCPRef1 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer +  48));
-            xYCPRef2 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer +  96));
-            xYCPRef3 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer + 144));
-            xYCPAvg  = _mm_srai_epi16(_mm_adds_epi16(xTwo,
-                                      _mm_adds_epi16(_mm_adds_epi16(xYCPRef0, xYCPRef1),
-                                                     _mm_adds_epi16(xYCPRef2, xYCPRef3))), 2);
-            xYCP     = _mm_loadu_si128((__m128i*)((BYTE *)ycp_src +  0));
-            xYCPDiff = (blur_first) ? abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPAvg))
-                                    : _mm_max_epi16(_mm_max_epi16(abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPRef0)),
-                                                                  abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPRef1))),
-                                                    _mm_max_epi16(abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPRef2)),
-                                                                  abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPRef3))));
-            xThreshold = _mm_load_si128((__m128i*)(threshold +  0));
-            xMask    = _mm_cmpgt_epi16(xThreshold, xYCPDiff); //(a > b) ? 0xffff : 0x0000;
-            xBase    = blendv_epi8_simd(xYCP, xYCPAvg, xMask);  //r = (mask0 & 0xff) ? b : a
-            xDither  = _mm_load_si128((__m128i *)(dither +  0));
-            xYCP     = _mm_adds_epi16(xBase, xDither);
-            _mm_storeu_si128((__m128i*)((BYTE *)ycp_dst +  0), xYCP);
-            
-            gather2(ycp_buffer +  0, ycp_src, ref_buffer + 0, simd);
-            createRandsimd_2(dither, ref, &gen_rand, ditherYC2, ditherYC, xRangeYLimit, xRangeXLimit0, xRangeXLimit1, simd);
-            gather2(ycp_buffer + 16, ycp_src, ref_buffer + 8, simd);
-
-            xYCPRef0 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer +  16));
-            xYCPRef1 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer +  64));
-            xYCPRef2 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer + 112));
-            xYCPRef3 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer + 160));
-            xYCPAvg  = _mm_srai_epi16(_mm_adds_epi16(xTwo,
-                                      _mm_adds_epi16(_mm_adds_epi16(xYCPRef0, xYCPRef1),
-                                                     _mm_adds_epi16(xYCPRef2, xYCPRef3))), 2);
-            xYCP     = _mm_loadu_si128((__m128i*)((BYTE *)ycp_src + 16));
-            xYCPDiff = (blur_first) ? abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPAvg))
-                                    : _mm_max_epi16(_mm_max_epi16(abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPRef0)),
-                                                                  abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPRef1))),
-                                                    _mm_max_epi16(abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPRef2)),
-                                                                  abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPRef3))));
-            xThreshold = _mm_load_si128((__m128i*)(threshold +  8));
-            xMask    = _mm_cmpgt_epi16(xThreshold, xYCPDiff); //(a > b) ? 0xffff : 0x0000;
-            xBase    = blendv_epi8_simd(xYCP, xYCPAvg, xMask);  //r = (mask0 & 0xff) ? b : a
-            xDither  = _mm_load_si128((__m128i *)(dither +  8));
-            xYCP     = _mm_adds_epi16(xBase, xDither);
-            _mm_storeu_si128((__m128i*)((BYTE *)ycp_dst + 16), xYCP);
-
-
-
-            xYCPRef0 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer +  32));
-            xYCPRef1 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer +  80));
-            xYCPRef2 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer + 128));
-            xYCPRef3 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer + 176));
-            xYCPAvg  = _mm_srai_epi16(_mm_adds_epi16(xTwo,
-                                      _mm_adds_epi16(_mm_adds_epi16(xYCPRef0, xYCPRef1),
-                                                     _mm_adds_epi16(xYCPRef2, xYCPRef3))), 2);
-            xYCP     = _mm_loadu_si128((__m128i*)((BYTE *)ycp_src + 32));
-            xYCPDiff = (blur_first) ? abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPAvg))
-                                    : _mm_max_epi16(_mm_max_epi16(abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPRef0)),
-                                                                  abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPRef1))),
-                                                    _mm_max_epi16(abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPRef2)),
-                                                                  abs_epi16_simd(_mm_subs_epi16(xYCP, xYCPRef3))));
-            xThreshold = _mm_load_si128((__m128i*)(threshold + 16));
-            xMask    = _mm_cmpgt_epi16(xThreshold, xYCPDiff); //(a > b) ? 0xffff : 0x0000;
-            xBase    = blendv_epi8_simd(xYCP, xYCPAvg, xMask);  //r = (mask0 & 0xff) ? b : a
-            xDither  = _mm_load_si128((__m128i *)(dither + 16));
-            xYCP     = _mm_adds_epi16(xBase, xDither);
-            _mm_storeu_si128((__m128i*)((BYTE *)ycp_dst + 32), xYCP);
-
-            i_step = limit_1_to_8(x);
         }
-    }
-    //最後のライン
-    if (y < y_end) {
-        PIXEL_YC *ycp_src = fpip->ycp_edit + y * max_w;
-        PIXEL_YC *ycp_dst = fpip->ycp_temp + y * max_w;
-        for (int i_step = 0, x = width - 8; x >= 0; x -= i_step, ycp_src += i_step, ycp_dst += i_step) {
+        //最後のライン
+        if (y < y_end) {
+            PIXEL_YC *ycp_src = fpip->ycp_edit + y * max_w + x_start;
+            PIXEL_YC *ycp_dst = fpip->ycp_temp + y * max_w + x_start;
+            for (int i_step = 0, x = (x_end - x_start) - 8; x >= 0; x -= i_step, ycp_src += i_step, ycp_dst += i_step) {
 
-            __m128i xYCP0, xYCP1, xYCP2, xDither0, xDither1, xDither2;
-            createRandsimd_4(&gen_rand, ditherYC2, ditherYC, xDither0, xDither1, xDither2);
+                __m128i xYCP0, xYCP1, xYCP2, xDither0, xDither1, xDither2;
+                createRandsimd_4(&gen_rand, ditherYC2, ditherYC, xDither0, xDither1, xDither2);
 
-            xYCP0    = _mm_loadu_si128((__m128i*)((BYTE *)ycp_src +  0));
-            xYCP1    = _mm_loadu_si128((__m128i*)((BYTE *)ycp_src + 16));
-            xYCP2    = _mm_loadu_si128((__m128i*)((BYTE *)ycp_src + 32));
-            xYCP0    = _mm_adds_epi16(xYCP0, xDither0);
-            xYCP1    = _mm_adds_epi16(xYCP1, xDither1);
-            xYCP2    = _mm_adds_epi16(xYCP2, xDither2);
-            _mm_storeu_si128((__m128i*)((BYTE *)ycp_dst +  0), xYCP0);
-            _mm_storeu_si128((__m128i*)((BYTE *)ycp_dst + 16), xYCP1);
-            _mm_storeu_si128((__m128i*)((BYTE *)ycp_dst + 32), xYCP2);
+                xYCP0    = _mm_loadu_si128((__m128i*)((BYTE *)ycp_src +  0));
+                xYCP1    = _mm_loadu_si128((__m128i*)((BYTE *)ycp_src + 16));
+                xYCP2    = _mm_loadu_si128((__m128i*)((BYTE *)ycp_src + 32));
+                xYCP0    = _mm_adds_epi16(xYCP0, xDither0);
+                xYCP1    = _mm_adds_epi16(xYCP1, xDither1);
+                xYCP2    = _mm_adds_epi16(xYCP2, xDither2);
+                _mm_storeu_si128((__m128i*)((BYTE *)ycp_dst +  0), xYCP0);
+                _mm_storeu_si128((__m128i*)((BYTE *)ycp_dst + 16), xYCP1);
+                _mm_storeu_si128((__m128i*)((BYTE *)ycp_dst + 32), xYCP2);
 
-            i_step = limit_1_to_8(x);
+                i_step = limit_1_to_8(x);
+            }
         }
     }
     _mm_empty();

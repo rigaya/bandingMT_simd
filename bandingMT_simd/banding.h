@@ -40,6 +40,8 @@
     #define EXTERN extern
 #endif //DEFINE_GLOBAL
 
+#define BANDING_PERF_CHECK 0
+
 typedef void (*func_generate_dither_buffer)(int thread_id, int thread_num, int seed);
 typedef void (*func_decrease_banding)(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip);
 
@@ -133,12 +135,16 @@ typedef struct {
     };
     int thread_num;         //現在gen_randで確保している数
     int current_thread_num; //直近のスレッド数
-    int _seed;              ///現在の設定(要チェック)
+    int block_count_x;      //ブロック分割数(横)
+    int block_count_y;      //ブロック分割数(縦)
+    int _seed;              //現在の設定(要チェック)
     DWORD availableSIMD;
     func_decrease_banding_mode_t decrease_banding[3]; //sample_mode別のバンディング低減関数
 } banding_t;
 
 EXTERN banding_t band;
+
+void band_get_block_range(int ib, int width, int height, int *x_start, int *x_fin, int *y_start, int *y_fin);
 
 DWORD get_availableSIMD();
 
