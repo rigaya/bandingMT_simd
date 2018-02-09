@@ -26,6 +26,9 @@
 //
 // ------------------------------------------------------------------------------------------
 
+#define USE_SSE 0
+#define USE_AVX2 1
+#define USE_AVX512 0
 #include <Windows.h>
 #include <emmintrin.h> //SSE2
 #include <smmintrin.h> //SSE4.1
@@ -35,11 +38,102 @@
 #include "filter.h"
 #include "banding_simd.h"
 
-#if _MSC_VER >= 1800 && !defined(__AVX__) && !defined(_DEBUG)
+#if defined(_MSC_VER) && _MSC_VER >= 1800 && !defined(__AVX__) && !defined(_DEBUG)
 static_assert(false, "do not forget to set /arch:AVX or /arch:AVX2 for this file.");
 #endif
 
 #define USE_VPGATHER 0
+
+//実は普通にmemcpyのほうが速いかもだけど気にしない
+static void __forceinline avx2_memcpy(BYTE *dst, BYTE *src, int size) {
+    if (size < 128) {
+        for (int i = 0; i < size; i++)
+            dst[i] = src[i];
+        return;
+    }
+    BYTE *dst_fin = dst + size;
+    BYTE *dst_aligned_fin = (BYTE *)(((size_t)(dst_fin + 31) & ~31) - 128);
+    __m256i y0, y1, y2, y3;
+    const int start_align_diff = (int)((size_t)dst & 31);
+    if (start_align_diff) {
+        y0 = _mm256_loadu_si256((__m256i*)src);
+        _mm256_storeu_si256((__m256i*)dst, y0);
+        dst += 32 - start_align_diff;
+        src += 32 - start_align_diff;
+    }
+    for (; dst < dst_aligned_fin; dst += 128, src += 128) {
+        y0 = _mm256_loadu_si256((__m256i*)(src +  0));
+        y1 = _mm256_loadu_si256((__m256i*)(src + 32));
+        y2 = _mm256_loadu_si256((__m256i*)(src + 64));
+        y3 = _mm256_loadu_si256((__m256i*)(src + 96));
+        _mm256_stream_si256((__m256i*)(dst +  0), y0);
+        _mm256_stream_si256((__m256i*)(dst + 32), y1);
+        _mm256_stream_si256((__m256i*)(dst + 64), y2);
+        _mm256_stream_si256((__m256i*)(dst + 96), y3);
+    }
+    BYTE *dst_tmp = dst_fin - 128;
+    src -= (dst - dst_tmp);
+    y0 = _mm256_loadu_si256((__m256i*)(src +  0));
+    y1 = _mm256_loadu_si256((__m256i*)(src + 32));
+    y2 = _mm256_loadu_si256((__m256i*)(src + 64));
+    y3 = _mm256_loadu_si256((__m256i*)(src + 96));
+    _mm256_storeu_si256((__m256i*)(dst_tmp +  0), y0);
+    _mm256_storeu_si256((__m256i*)(dst_tmp + 32), y1);
+    _mm256_storeu_si256((__m256i*)(dst_tmp + 64), y2);
+    _mm256_storeu_si256((__m256i*)(dst_tmp + 96), y3);
+    _mm256_zeroupper();
+}
+
+#define yOne256 (_mm256_srli_epi16(_mm256_cmpeq_epi8(_mm256_setzero_si256(), _mm256_setzero_si256()), 15))
+#define yTwo256 (_mm256_slli_epi16(yOne256, 1))
+#define yC_16   (_mm256_set1_epi16(16))
+
+//本来の256bit alignr
+#define MM_ABS(x) (((x) < 0) ? -(x) : (x))
+#define _mm256_alignr256_epi8(a, b, i) ((i<=16) ? _mm256_alignr_epi8(_mm256_permute2x128_si256(a, b, (0x00<<4) + 0x03), b, i) : _mm256_alignr_epi8(a, _mm256_permute2x128_si256(a, b, (0x00<<4) + 0x03), MM_ABS(i-16)))
+
+//_mm256_srli_si256, _mm256_slli_si256は
+//単に128bitシフト×2をするだけの命令である
+#ifndef _mm256_bsrli_epi128
+#define _mm256_bsrli_epi128 _mm256_srli_si256
+#endif
+#ifndef _mm256_bslli_epi128
+#define _mm256_bslli_epi128 _mm256_slli_si256
+#endif
+//本当の256bitシフト
+#define _mm256_srli256_si256(a, i) ((i<=16) ? _mm256_alignr_epi8(_mm256_permute2x128_si256(a, a, (0x08<<4) + 0x03), a, i) : _mm256_bsrli_epi128(_mm256_permute2x128_si256(a, a, (0x08<<4) + 0x03), MM_ABS(i-16)))
+#define _mm256_slli256_si256(a, i) ((i<=16) ? _mm256_alignr_epi8(a, _mm256_permute2x128_si256(a, a, (0x00<<4) + 0x08), MM_ABS(16-i)) : _mm256_bslli_epi128(_mm256_permute2x128_si256(a, a, (0x00<<4) + 0x08), MM_ABS(i-16)))
+
+static __forceinline __m256i _mm256_multi6_epi32(__m256i a) {
+    return _mm256_add_epi32(_mm256_slli_epi32(a, 1), _mm256_slli_epi32(a, 2));
+}
+static __forceinline __m256i _mm256_multi3_epi32(__m256i a) {
+    return _mm256_add_epi32(a, _mm256_slli_epi32(a, 1));
+}
+
+static __forceinline __m256i _mm256_neg_epi32(__m256i y) {
+    return _mm256_sub_epi32(_mm256_setzero_si256(), y);
+}
+static __forceinline __m256i _mm256_neg_epi16(__m256i y) {
+    return _mm256_sub_epi16(_mm256_setzero_si256(), y);
+}
+
+static __forceinline int limit_1_to_16(int value) {
+    int cmp_ret = (value>=16);
+    return (cmp_ret<<4) + (value & (0x0f & (~(0-cmp_ret)))) + (value == 0);
+}
+
+static __forceinline __m256i apply_field_mask_256(__m256i yRef, BOOL to_lower_byte) {
+    __m256i yFeildMask = _mm256_slli_epi16(_mm256_cmpeq_epi8(_mm256_setzero_si256(), _mm256_setzero_si256()), 1);
+    if (!to_lower_byte)
+        yFeildMask = _mm256_alignr_epi8(yFeildMask, yFeildMask, 1);
+    __m256i yMaskNeg = _mm256_cmpgt_epi8(_mm256_setzero_si256(), yRef);
+    __m256i yFieldMaskHit = _mm256_andnot_si256(yFeildMask, yRef);
+    yFieldMaskHit = _mm256_and_si256(yFieldMaskHit, yMaskNeg);
+    yRef = _mm256_and_si256(yRef, yFeildMask);
+    yRef = _mm256_add_epi16(yRef, _mm256_slli_epi16(yFieldMaskHit, 1));
+    return yRef;
+}
 
 //mode012共通 ... ref用乱数の見を発生させる
 static void __forceinline createRandAVX2_0(BYTE *ref_ptr, xor514x2_t *gen_rand, __m256i yRangeYLimit, __m256i& yRangeXLimit0, __m256i& yRangeXLimit1) {

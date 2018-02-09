@@ -31,11 +31,11 @@
 #ifndef _BANDING_VER_H_
 #define _BANDING_VER_H_
 
-#define AUF_VERSION      0,0,17,6
-#define AUF_VERSION_STR  "17+6"
+#define AUF_VERSION      0,0,17,8
+#define AUF_VERSION_STR  "17+8"
 #define AUF_NAME         "bandingMT_simd.auf"
 #define AUF_FULL_NAME    "バンディング低減MT SIMD"
-#define AUF_VERSION_NAME "バンディング低減MT SIMD ver17+4"
+#define AUF_VERSION_NAME "バンディング低減MT SIMD ver17+8"
 #define AUF_VERSION_INFO AUF_VERSION_NAME
 
 #ifdef DEBUG

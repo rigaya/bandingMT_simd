@@ -65,6 +65,8 @@ void decrease_banding_mode0_p_avx2(int thread_id, int thread_num, FILTER* fp, FI
 void decrease_banding_mode0_i_avx2(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip);
 void decrease_banding_mode0_p_avx2_new(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip);
 void decrease_banding_mode0_i_avx2_new(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip);
+void decrease_banding_mode0_p_avx512(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip);
+void decrease_banding_mode0_i_avx512(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip);
 
 void decrease_banding_mode1_blur_later_p_sse2(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip);
 void decrease_banding_mode1_blur_first_p_sse2(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip);
@@ -90,6 +92,10 @@ void decrease_banding_mode1_blur_later_p_avx2_new(int thread_id, int thread_num,
 void decrease_banding_mode1_blur_first_p_avx2_new(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip);
 void decrease_banding_mode1_blur_later_i_avx2_new(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip);
 void decrease_banding_mode1_blur_first_i_avx2_new(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip);
+void decrease_banding_mode1_blur_later_p_avx512(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip);
+void decrease_banding_mode1_blur_first_p_avx512(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip);
+void decrease_banding_mode1_blur_later_i_avx512(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip);
+void decrease_banding_mode1_blur_first_i_avx512(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip);
 
 void decrease_banding_mode2_blur_later_p_sse2(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip);
 void decrease_banding_mode2_blur_first_p_sse2(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip);
@@ -111,27 +117,41 @@ void decrease_banding_mode2_blur_later_p_avx2(int thread_id, int thread_num, FIL
 void decrease_banding_mode2_blur_first_p_avx2(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip);
 void decrease_banding_mode2_blur_later_i_avx2(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip);
 void decrease_banding_mode2_blur_first_i_avx2(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip);
+void decrease_banding_mode2_blur_later_p_avx512(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip);
+void decrease_banding_mode2_blur_first_p_avx512(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip);
+void decrease_banding_mode2_blur_later_i_avx512(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip);
+void decrease_banding_mode2_blur_first_i_avx512(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip);
 
 typedef struct {
     func_decrease_banding set[2][2];
 } func_decrease_banding_mode_t;
 
 enum {
-    NONE   = 0x0000,
-    SSE2   = 0x0001,
-    SSE3   = 0x0002,
-    SSSE3  = 0x0004,
-    SSE41  = 0x0008,
-    SSE42  = 0x0010,
-    POPCNT = 0x0020,
-    AVX    = 0x0040,
-    AVX2   = 0x0080,
+    NONE       = 0x0000,
+    SSE2       = 0x0001,
+    SSE3       = 0x0002,
+    SSSE3      = 0x0004,
+    SSE41      = 0x0008,
+    SSE42      = 0x0010,
+    POPCNT     = 0x0020,
+    AVX        = 0x0040,
+    AVX2       = 0x0080,
+    AVX512F    = 0x0100,
+    AVX512DQ   = 0x0200,
+    AVX512IFMA = 0x0400,
+    AVX512PF   = 0x0800,
+    AVX512ER   = 0x1000,
+    AVX512CD   = 0x2000,
+    AVX512BW   = 0x4000,
+    AVX512VL   = 0x8000,
+    AVX512VBMI = 0x10000,
 };
 
 typedef struct {
     union {
         xor514_t   *gen_rand;
         xor514x2_t *gen_rand_avx2;
+        xor514x4_t *gen_rand_avx512;
     };
     int thread_num;         //現在gen_randで確保している数
     int current_thread_num; //直近のスレッド数

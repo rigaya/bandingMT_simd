@@ -93,4 +93,34 @@ static __forceinline void xor514x2(xor514x2_t *p) {
     p->n[3] = _mm256_xor_si256(w,s);
 }
 
+typedef union _xor514x4_t {
+    uint32_t u[64];
+    __m128i m[16];
+    __m256i n[8];
+    __m512i z[4];
+} __declspec(align(64)) xor514x4_t;
+
+static void xor514x4_init(xor514x4_t*p, uint32_t seed) {
+    p->u[0] = seed;
+    for (uint32_t i = 1; i < 32; i++)
+        p->u[i] = seed = 1812433253 * (seed ^ (seed>>30)) + i;
+}
+
+static __forceinline void xor514x4(xor514x4_t *p) {
+    enum { a=101, b=99, c=8 };
+    __m512i s, t, x, w;
+    x = p->z[0];
+    w = p->z[3];
+    s = _mm512_bslli_epi128(_mm512_slli_epi64(x, a-64), 8);
+    t = _mm512_xor_si512(x, s);
+    p->z[0] = p->z[1];
+    p->z[1] = p->z[2];
+    p->z[2] = w;
+    s = _mm512_bsrli_epi128(_mm512_srli_epi64(t, b-64), 8);
+    t = _mm512_xor_si512(t, s);
+    s = _mm512_bsrli_epi128(w, c/8);
+    s = _mm512_xor_si512(s, t);
+    p->z[3] = _mm512_xor_si512(w, s);
+}
+
 #endif //_XOR_RAND_H_

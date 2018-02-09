@@ -111,9 +111,9 @@ BOOL func_init( FILTER *fp ) {
 }
 
 BOOL func_exit( FILTER *fp ) {
-    if (band.gen_rand_avx2)
-        _aligned_free(band.gen_rand_avx2);
-    band.gen_rand_avx2 = NULL;
+    if (band.gen_rand_avx512)
+        _aligned_free(band.gen_rand_avx512);
+    band.gen_rand_avx512 = NULL;
     return TRUE;
 }
 
@@ -128,7 +128,10 @@ void multi_thread_get_thread_num( int thread_id, int thread_num, void *param1, v
 }
 
 static void init_gen_rand() {
-    if (band.availableSIMD & AVX2) {
+    if (band.availableSIMD & AVX512BW) {
+        for (int i = 0; i < band.thread_num; i++)
+            xor514x4_init(&band.gen_rand_avx512[i], band._seed + (i << 2));
+    } else if (band.availableSIMD & AVX2) {
         for (int i = 0; i < band.thread_num; i++)
             xor514x2_init(&band.gen_rand_avx2[i], band._seed + (i << 2));
     } else {
@@ -138,7 +141,7 @@ static void init_gen_rand() {
 }
 
 BOOL init_band(FILTER *fp, FILTER_PROC_INFO *fpip) {
-    if (NULL == band.gen_rand_avx2) {
+    if (NULL == band.gen_rand_avx512) {
         band.availableSIMD = get_availableSIMD();
         //使用する関数を設定
         band_set_func();
@@ -146,7 +149,7 @@ BOOL init_band(FILTER *fp, FILTER_PROC_INFO *fpip) {
         fp->exfunc->exec_multi_thread_func(multi_thread_get_thread_num, fp, fpip);
         //乱数用メモリ確保
         band.thread_num = band.current_thread_num;
-        if (NULL == (band.gen_rand_avx2 = (xor514x2_t *)_aligned_malloc(sizeof(xor514x2_t) * band.thread_num, 64)))
+        if (NULL == (band.gen_rand_avx512 = (xor514x4_t *)_aligned_malloc(sizeof(xor514x4_t) * band.thread_num, 64)))
             return FALSE;
         init_gen_rand();
     }
@@ -281,7 +284,7 @@ void band_perf_check(FILTER *fp, FILTER_PROC_INFO *fpip) {
 BOOL func_proc( FILTER *fp, FILTER_PROC_INFO *fpip )
 {
     //初期化確認
-    if (NULL == band.gen_rand_avx2) {
+    if (NULL == band.gen_rand_avx512) {
         init_band(fp, fpip);
     }
 
@@ -308,11 +311,11 @@ BOOL func_proc( FILTER *fp, FILTER_PROC_INFO *fpip )
     //スレッド数を確認
     //増えていれば対応し、次回からそのスレッド数で対応できるようにする
     if (band.thread_num < band.current_thread_num) {
-        if (band.gen_rand_avx2)
-            _aligned_free(band.gen_rand_avx2);
+        if (band.gen_rand_avx512)
+            _aligned_free(band.gen_rand_avx512);
         //乱数用メモリ確保
         band.thread_num = band.current_thread_num;
-        if (NULL == (band.gen_rand_avx2 = (xor514x2_t *)_aligned_malloc(sizeof(xor514x2_t) * band.thread_num, 64)))
+        if (NULL == (band.gen_rand_avx512 = (xor514x4_t *)_aligned_malloc(sizeof(xor514x4_t) * band.thread_num, 64)))
             return FALSE;
         init_gen_rand();
     }
