@@ -30,6 +30,7 @@
 #ifndef _BANDING_SIMD_H_
 #define _BANDING_SIMD_H_
 
+#include <algorithm>
 #include <emmintrin.h>
 
 //実は普通にmemcpyのほうが速いかもだけど気にしない
@@ -102,7 +103,7 @@ static __forceinline __m128i abs_epi16_sse2(__m128i a) {
 #define xArray128_16bit (_mm_slli_epi16(xOne, 7))
 #define cvtlo_epi8_epi16(a) ((simd & SSE41) ? (_mm_cvtepi8_epi16((a))) : (_mm_sub_epi16(_mm_unpacklo_epi8(_mm_add_epi8((a), (xArray128_8bit)), (xZero)), (xArray128_16bit))))
 #define cvthi_epi8_epi16(a) ((simd & SSE41) ? (_mm_cvtepi8_epi16(_mm_srli_si128((a), 8))) : (_mm_sub_epi16(_mm_unpackhi_epi8(_mm_add_epi8((a), (xArray128_8bit)), (xZero)), (xArray128_16bit))))
-#define min3(x, y, z) (min((x), (min((y), (z)))))
+#define min3(x, y, z) (std::min((x), (std::min((y), (z)))))
 #define _mm_multi6_epi32(a) (_mm_add_epi32(_mm_slli_epi32(a, 1), _mm_slli_epi32(a, 2)))
 
 alignas(64) static const uint16_t x_range_offset[32] = {
@@ -247,14 +248,14 @@ static void __forceinline decrease_banding_mode0_simd(int thread_id, int thread_
     const int seed    = fp->track[7];
     const int ditherY = fp->track[4];
     const int ditherC = fp->track[5];
-    const int  rand_each_frame = fp->check[1];
-    const int  blur_first      = fp->check[0];
-    const BYTE range           = fp->track[0];
-    const int  threshold_y     = fp->track[1] << (!(sample_mode && blur_first) + 1);
-    const int  threshold_cb    = fp->track[2] << (!(sample_mode && blur_first) + 1);
-    const int  threshold_cr    = fp->track[3] << (!(sample_mode && blur_first) + 1);
-    const int  b_start = (band.block_count_x * band.block_count_y *  thread_id) / thread_num;
-    const int  b_end   = (band.block_count_x * band.block_count_y * (thread_id+1)) / thread_num;
+    const int rand_each_frame = fp->check[1];
+    const int blur_first      = fp->check[0];
+    const int range           = fp->track[0];
+    const int threshold_y     = fp->track[1] << (!(sample_mode && blur_first) + 1);
+    const int threshold_cb    = fp->track[2] << (!(sample_mode && blur_first) + 1);
+    const int threshold_cr    = fp->track[3] << (!(sample_mode && blur_first) + 1);
+    const int b_start = (band.block_count_x * band.block_count_y *  thread_id) / thread_num;
+    const int b_end   = (band.block_count_x * band.block_count_y * (thread_id+1)) / thread_num;
     __m128i xRefMulti  = _mm_unpacklo_epi16(_mm_set1_epi16(max_w), xOne);
     
     alignas(16) char     ref[16];
@@ -278,7 +279,7 @@ static void __forceinline decrease_banding_mode0_simd(int thread_id, int thread_
         int x_start, x_end, y_start, y_end;
         band_get_block_range(ib, width, height, &x_start, &x_end, &y_start, &y_end);
         int y;
-        const int y_main_end = min(y_end, height - 1);
+        const int y_main_end = std::min(y_end, height - 1);
         for (y = y_start; y < y_main_end; y++) {
             PIXEL_YC *ycp_src = fpip->ycp_edit + y * max_w + x_start;
             PIXEL_YC *ycp_dst = fpip->ycp_temp + y * max_w + x_start;
@@ -494,13 +495,13 @@ static void __forceinline decrease_banding_mode1_simd(int thread_id, int thread_
     const int seed    = fp->track[7];
     const int ditherY = fp->track[4];
     const int ditherC = fp->track[5];
-    const int  rand_each_frame = fp->check[1];
-    const BYTE range           = fp->track[0];
-    const int  threshold_y     = fp->track[1] << (!(sample_mode && blur_first) + 1);
-    const int  threshold_cb    = fp->track[2] << (!(sample_mode && blur_first) + 1);
-    const int  threshold_cr    = fp->track[3] << (!(sample_mode && blur_first) + 1);
-    const int  b_start = (band.block_count_x * band.block_count_y *  thread_id) / thread_num;
-    const int  b_end   = (band.block_count_x * band.block_count_y * (thread_id+1)) / thread_num;
+    const int rand_each_frame = fp->check[1];
+    const int range           = fp->track[0];
+    const int threshold_y     = fp->track[1] << (!(sample_mode && blur_first) + 1);
+    const int threshold_cb    = fp->track[2] << (!(sample_mode && blur_first) + 1);
+    const int threshold_cr    = fp->track[3] << (!(sample_mode && blur_first) + 1);
+    const int b_start = (band.block_count_x * band.block_count_y *  thread_id) / thread_num;
+    const int b_end   = (band.block_count_x * band.block_count_y * (thread_id+1)) / thread_num;
     __m128i xRefMulti  = _mm_unpacklo_epi16(_mm_set1_epi16(max_w), xOne);
     
     alignas(16) char     ref[16];
@@ -546,7 +547,7 @@ static void __forceinline decrease_banding_mode1_simd(int thread_id, int thread_
         int x_start, x_end, y_start, y_end;
         band_get_block_range(ib, width, height, &x_start, &x_end, &y_start, &y_end);
         int y;
-        const int y_main_end = min(y_end, height - 1);
+        const int y_main_end = std::min(y_end, height - 1);
         for (y = y_start; y < y_main_end; y++) {
             PIXEL_YC *ycp_src = fpip->ycp_edit + y * max_w + x_start;
             PIXEL_YC *ycp_dst = fpip->ycp_temp + y * max_w + x_start;
@@ -661,13 +662,13 @@ static void __forceinline decrease_banding_mode2_simd(int thread_id, int thread_
     const int seed    = fp->track[7];
     const int ditherY = fp->track[4];
     const int ditherC = fp->track[5];
-    const int  rand_each_frame = fp->check[1];
-    const BYTE range           = fp->track[0];
-    const int  threshold_y     = fp->track[1] << (!(sample_mode && blur_first) + 1);
-    const int  threshold_cb    = fp->track[2] << (!(sample_mode && blur_first) + 1);
-    const int  threshold_cr    = fp->track[3] << (!(sample_mode && blur_first) + 1);
-    const int  b_start = (band.block_count_x * band.block_count_y *  thread_id) / thread_num;
-    const int  b_end   = (band.block_count_x * band.block_count_y * (thread_id+1)) / thread_num;
+    const int rand_each_frame = fp->check[1];
+    const int range           = fp->track[0];
+    const int threshold_y     = fp->track[1] << (!(sample_mode && blur_first) + 1);
+    const int threshold_cb    = fp->track[2] << (!(sample_mode && blur_first) + 1);
+    const int threshold_cr    = fp->track[3] << (!(sample_mode && blur_first) + 1);
+    const int b_start = (band.block_count_x * band.block_count_y *  thread_id) / thread_num;
+    const int b_end   = (band.block_count_x * band.block_count_y * (thread_id+1)) / thread_num;
     __m128i xRefMulti  = _mm_unpacklo_epi16(_mm_set1_epi16(max_w), xOne);
     __m128i xRefMulti2 = _mm_unpacklo_epi16(xOne, _mm_set1_epi16(-max_w));
     
@@ -714,7 +715,7 @@ static void __forceinline decrease_banding_mode2_simd(int thread_id, int thread_
         int x_start, x_end, y_start, y_end;
         band_get_block_range(ib, width, height, &x_start, &x_end, &y_start, &y_end);
         int y;
-        const int y_main_end = min(y_end, height - 1);
+        const int y_main_end = std::min(y_end, height - 1);
         for (y = y_start; y < y_main_end; y++) {
             PIXEL_YC *ycp_src = fpip->ycp_edit + y * max_w + x_start;
             PIXEL_YC *ycp_dst = fpip->ycp_temp + y * max_w + x_start;

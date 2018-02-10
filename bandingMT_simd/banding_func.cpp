@@ -26,8 +26,11 @@
 //
 // ------------------------------------------------------------------------------------------
 
+#define NOMINMAX
+#define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 #include <intrin.h>
+#include <algorithm>
 #include "banding.h"
 
 DWORD get_availableSIMD() {
@@ -183,9 +186,9 @@ static inline char random_range(BYTE random, char range) {
 
 static inline PIXEL_YC get_diff_abs(PIXEL_YC a, PIXEL_YC b) {
     PIXEL_YC diff;
-    diff.y  = abs(a.y  - b.y);
-    diff.cb = abs(a.cb - b.cb);
-    diff.cr = abs(a.cr - b.cr);
+    diff.y  = std::abs(a.y  - b.y);
+    diff.cb = std::abs(a.cb - b.cb);
+    diff.cr = std::abs(a.cr - b.cr);
     return diff;
 }
 
@@ -207,14 +210,14 @@ static inline PIXEL_YC get_avg(PIXEL_YC a, PIXEL_YC b, PIXEL_YC c, PIXEL_YC d) {
 
 static inline PIXEL_YC get_max(PIXEL_YC a, PIXEL_YC b) {
     PIXEL_YC max_value;
-    max_value.y  = max(a.y,  b.y );
-    max_value.cb = max(a.cb, b.cb);
-    max_value.cr = max(a.cr, b.cr);
+    max_value.y  = std::max(a.y,  b.y );
+    max_value.cb = std::max(a.cb, b.cb);
+    max_value.cr = std::max(a.cr, b.cr);
     return max_value;
 }
 
 static inline int min4(int a, int b, int c, int d) {
-    return min(min(a, b), min(c, d));
+    return std::min(std::min(a, b), std::min(c, d));
 }
 
 static inline PIXEL_YC get_max(PIXEL_YC a, PIXEL_YC b, PIXEL_YC c, PIXEL_YC d) {
@@ -242,7 +245,7 @@ void decrease_banding_mode0_c(int thread_id, int thread_num, FILTER* fp, FILTER_
     for (int y = y_start; y < y_end; y++) {
         PIXEL_YC *ycp_src = fpip->ycp_edit + y * max_w;
         PIXEL_YC *ycp_dst = fpip->ycp_temp + y * max_w;
-        const int y_limit = min(y, height-y-1);
+        const int y_limit = std::min(y, height-y-1);
         for (int x = 0; x < width; x++, ycp_src++, ycp_dst++) {
             const BYTE range_limited = min4(range, y_limit, x, width-x-1);
             xor128(&gen_rand);
@@ -280,7 +283,7 @@ void decrease_banding_mode12_c(int thread_id, int thread_num, FILTER* fp, FILTER
     for (int y = y_start; y < y_end; y++) {
         PIXEL_YC *ycp_src = fpip->ycp_edit + y * max_w;
         PIXEL_YC *ycp_dst = fpip->ycp_temp + y * max_w;
-        int y_limit = min(y, height-y-1);
+        int y_limit = std::min(y, height-y-1);
         for (int x = 0; x < width; x++, ycp_src++, ycp_dst++) {
             const BYTE range_limited = min4(range, y_limit, x, width-x-1);
             xor128(&gen_rand);

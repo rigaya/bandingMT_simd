@@ -27,6 +27,8 @@
 // ------------------------------------------------------------------------------------------
 
 
+#define NOMINMAX
+#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <process.h>
 #include <algorithm>
@@ -194,7 +196,7 @@ void multi_thread_func( int thread_id, int thread_num, void *param1, void *param
     //バンディング低減 (確保しているスレッド数分だけ実行する)
     //使用スレッド数の拡大は、このmulti_thread_funcが終了後に対応
     if (thread_id < band.current_thread_num)
-        band.decrease_banding[sample_mode].set[process_per_field][blur_first](thread_id, min(thread_num, band.current_thread_num), fp, fpip);
+        band.decrease_banding[sample_mode].set[process_per_field][blur_first](thread_id, std::min(thread_num, band.current_thread_num), fp, fpip);
 }
 
 #if BANDING_PERF_CHECK

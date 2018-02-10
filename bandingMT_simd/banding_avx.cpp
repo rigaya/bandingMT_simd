@@ -30,6 +30,8 @@
 #define USE_SSE 1
 #define USE_AVX2 0
 #define USE_AVX512 0
+#define NOMINMAX
+#define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 #include <emmintrin.h> //SSE2
 #include <smmintrin.h> //SSE4.1

@@ -27,6 +27,8 @@
 // ------------------------------------------------------------------------------------------
 
 #define USE_AVX512 1
+#define NOMINMAX
+#define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 #include <emmintrin.h> //SSE2
 #include <smmintrin.h> //SSE4.1
@@ -248,14 +250,14 @@ static void __forceinline decrease_banding_mode0_avx512(int thread_id, int threa
     const int seed    = fp->track[7];
     const int ditherY = fp->track[4];
     const int ditherC = fp->track[5];
-    const int  rand_each_frame = fp->check[1];
-    const int  blur_first      = fp->check[0];
-    const BYTE range           = fp->track[0];
-    const int  threshold_y     = fp->track[1] << (!(sample_mode && blur_first) + 1);
-    const int  threshold_cb    = fp->track[2] << (!(sample_mode && blur_first) + 1);
-    const int  threshold_cr    = fp->track[3] << (!(sample_mode && blur_first) + 1);
-    const int  b_start = (band.block_count_x * band.block_count_y *  thread_id) / thread_num;
-    const int  b_end   = (band.block_count_x * band.block_count_y * (thread_id+1)) / thread_num;
+    const int rand_each_frame = fp->check[1];
+    const int blur_first      = fp->check[0];
+    const int range           = fp->track[0];
+    const int threshold_y     = fp->track[1] << (!(sample_mode && blur_first) + 1);
+    const int threshold_cb    = fp->track[2] << (!(sample_mode && blur_first) + 1);
+    const int threshold_cr    = fp->track[3] << (!(sample_mode && blur_first) + 1);
+    const int b_start = (band.block_count_x * band.block_count_y *  thread_id) / thread_num;
+    const int b_end   = (band.block_count_x * band.block_count_y * (thread_id+1)) / thread_num;
     __m512i yRefMulti  = _mm512_unpacklo_epi16(_mm512_set1_epi16(max_w), zOne512);
     __m512i yGather0, yGather1, yGather2, yGather3;
     
@@ -278,7 +280,7 @@ static void __forceinline decrease_banding_mode0_avx512(int thread_id, int threa
         int x_start, x_end, y_start, y_end;
         band_get_block_range(ib, width, height, &x_start, &x_end, &y_start, &y_end);
         int y;
-        const int y_main_end = min(y_end, height - 1);
+        const int y_main_end = std::min(y_end, height - 1);
         for (y = y_start; y < y_main_end; y++) {
             PIXEL_YC *ycp_src = fpip->ycp_edit + y * max_w + x_start;
             PIXEL_YC *ycp_dst = fpip->ycp_temp + y * max_w + x_start;
@@ -357,13 +359,13 @@ static void __forceinline decrease_banding_mode1_avx512(int thread_id, int threa
     const int seed    = fp->track[7];
     const int ditherY = fp->track[4];
     const int ditherC = fp->track[5];
-    const int  rand_each_frame = fp->check[1];
-    const BYTE range           = fp->track[0];
-    const int  threshold_y     = fp->track[1] << (!(sample_mode && blur_first) + 1);
-    const int  threshold_cb    = fp->track[2] << (!(sample_mode && blur_first) + 1);
-    const int  threshold_cr    = fp->track[3] << (!(sample_mode && blur_first) + 1);
-    const int  b_start = (band.block_count_x * band.block_count_y *  thread_id) / thread_num;
-    const int  b_end   = (band.block_count_x * band.block_count_y * (thread_id+1)) / thread_num;
+    const int rand_each_frame = fp->check[1];
+    const int range           = fp->track[0];
+    const int threshold_y     = fp->track[1] << (!(sample_mode && blur_first) + 1);
+    const int threshold_cb    = fp->track[2] << (!(sample_mode && blur_first) + 1);
+    const int threshold_cr    = fp->track[3] << (!(sample_mode && blur_first) + 1);
+    const int b_start = (band.block_count_x * band.block_count_y *  thread_id) / thread_num;
+    const int b_end   = (band.block_count_x * band.block_count_y * (thread_id+1)) / thread_num;
     __m512i yRefMulti  = _mm512_unpacklo_epi16(_mm512_set1_epi16(max_w), zOne512);
     __m512i yGather0, yGather1, yGather2, yGather3, yGather4, yGather5, yGather6, yGather7;
     
@@ -408,7 +410,7 @@ static void __forceinline decrease_banding_mode1_avx512(int thread_id, int threa
         int x_start, x_end, y_start, y_end;
         band_get_block_range(ib, width, height, &x_start, &x_end, &y_start, &y_end);
         int y;
-        const int y_main_end = min(y_end, height - 1);
+        const int y_main_end = std::min(y_end, height - 1);
         for (y = y_start; y < y_main_end; y++) {
             PIXEL_YC *ycp_src = fpip->ycp_edit + y * max_w + x_start;
             PIXEL_YC *ycp_dst = fpip->ycp_temp + y * max_w + x_start;
@@ -551,13 +553,13 @@ static void __forceinline decrease_banding_mode2_avx512(int thread_id, int threa
     const int seed    = fp->track[7];
     const int ditherY = fp->track[4];
     const int ditherC = fp->track[5];
-    const int  rand_each_frame = fp->check[1];
-    const BYTE range           = fp->track[0];
-    const int  threshold_y     = fp->track[1] << (!(sample_mode && blur_first) + 1);
-    const int  threshold_cb    = fp->track[2] << (!(sample_mode && blur_first) + 1);
-    const int  threshold_cr    = fp->track[3] << (!(sample_mode && blur_first) + 1);
-    const int  b_start = (band.block_count_x * band.block_count_y *  thread_id) / thread_num;
-    const int  b_end   = (band.block_count_x * band.block_count_y * (thread_id+1)) / thread_num;
+    const int rand_each_frame = fp->check[1];
+    const int range           = fp->track[0];
+    const int threshold_y     = fp->track[1] << (!(sample_mode && blur_first) + 1);
+    const int threshold_cb    = fp->track[2] << (!(sample_mode && blur_first) + 1);
+    const int threshold_cr    = fp->track[3] << (!(sample_mode && blur_first) + 1);
+    const int b_start = (band.block_count_x * band.block_count_y *  thread_id) / thread_num;
+    const int b_end   = (band.block_count_x * band.block_count_y * (thread_id+1)) / thread_num;
     __m512i yRefMulti  = _mm512_unpacklo_epi16(_mm512_set1_epi16(max_w), zOne512);
     __m512i yRefMulti2 = _mm512_unpacklo_epi16(zOne512, _mm512_set1_epi16(-max_w));
     
@@ -603,7 +605,7 @@ static void __forceinline decrease_banding_mode2_avx512(int thread_id, int threa
         int x_start, x_end, y_start, y_end;
         band_get_block_range(ib, width, height, &x_start, &x_end, &y_start, &y_end);
         int y;
-        const int y_main_end = min(y_end, height - 1);
+        const int y_main_end = std::min(y_end, height - 1);
         for (y = y_start; y < y_main_end; y++) {
             PIXEL_YC *ycp_src = fpip->ycp_edit + y * max_w + x_start;
             PIXEL_YC *ycp_dst = fpip->ycp_temp + y * max_w + x_start;

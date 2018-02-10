@@ -29,6 +29,8 @@
 #define USE_SSE 0
 #define USE_AVX2 1
 #define USE_AVX512 0
+#define NOMINMAX
+#define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 #include <emmintrin.h> //SSE2
 #include <smmintrin.h> //SSE4.1
@@ -290,7 +292,7 @@ static void __forceinline decrease_banding_mode0_avx2(int thread_id, int thread_
     const int ditherC = fp->track[5];
     const int  rand_each_frame = fp->check[1];
     const int  blur_first      = fp->check[0];
-    const BYTE range           = fp->track[0];
+    const int  range           = fp->track[0];
     const int  threshold_y     = fp->track[1] << (!(sample_mode && blur_first) + 1);
     const int  threshold_cb    = fp->track[2] << (!(sample_mode && blur_first) + 1);
     const int  threshold_cr    = fp->track[3] << (!(sample_mode && blur_first) + 1);
@@ -318,7 +320,7 @@ static void __forceinline decrease_banding_mode0_avx2(int thread_id, int thread_
         int x_start, x_end, y_start, y_end;
         band_get_block_range(ib, width, height, &x_start, &x_end, &y_start, &y_end);
         int y;
-        const int y_main_end = min(y_end, height - 1);
+        const int y_main_end = std::min(y_end, height - 1);
         for (y = y_start; y < y_main_end; y++) {
             PIXEL_YC *ycp_src = fpip->ycp_edit + y * max_w + x_start;
             PIXEL_YC *ycp_dst = fpip->ycp_temp + y * max_w + x_start;
@@ -392,14 +394,14 @@ static void __forceinline decrease_banding_mode0_avx2(int thread_id, int thread_
     const int seed    = fp->track[7];
     const int ditherY = fp->track[4];
     const int ditherC = fp->track[5];
-    const int  rand_each_frame = fp->check[1];
-    const int  blur_first      = fp->check[0];
-    const BYTE range           = fp->track[0];
-    const int  threshold_y     = fp->track[1] << (!(sample_mode && blur_first) + 1);
-    const int  threshold_cb    = fp->track[2] << (!(sample_mode && blur_first) + 1);
-    const int  threshold_cr    = fp->track[3] << (!(sample_mode && blur_first) + 1);
-    const int  b_start = (band.block_count_x * band.block_count_y *  thread_id) / thread_num;
-    const int  b_end   = (band.block_count_x * band.block_count_y * (thread_id+1)) / thread_num;
+    const int rand_each_frame = fp->check[1];
+    const int blur_first      = fp->check[0];
+    const int range           = fp->track[0];
+    const int threshold_y     = fp->track[1] << (!(sample_mode && blur_first) + 1);
+    const int threshold_cb    = fp->track[2] << (!(sample_mode && blur_first) + 1);
+    const int threshold_cr    = fp->track[3] << (!(sample_mode && blur_first) + 1);
+    const int b_start = (band.block_count_x * band.block_count_y *  thread_id) / thread_num;
+    const int b_end   = (band.block_count_x * band.block_count_y * (thread_id+1)) / thread_num;
     __m256i yRefMulti  = _mm256_unpacklo_epi16(_mm256_set1_epi16(max_w), yOne256);
     
     alignas(32) BYTE     ref[32];
@@ -423,7 +425,7 @@ static void __forceinline decrease_banding_mode0_avx2(int thread_id, int thread_
         int x_start, x_end, y_start, y_end;
         band_get_block_range(ib, width, height, &x_start, &x_end, &y_start, &y_end);
         int y;
-        const int y_main_end = min(y_end, height - 1);
+        const int y_main_end = std::min(y_end, height - 1);
         for (y = y_start; y < y_main_end; y++) {
             PIXEL_YC *ycp_src = fpip->ycp_edit + y * max_w + x_start;
             PIXEL_YC *ycp_dst = fpip->ycp_temp + y * max_w + x_start;
@@ -597,13 +599,13 @@ static void __forceinline decrease_banding_mode1_avx2(int thread_id, int thread_
     const int seed    = fp->track[7];
     const int ditherY = fp->track[4];
     const int ditherC = fp->track[5];
-    const int  rand_each_frame = fp->check[1];
-    const BYTE range           = fp->track[0];
-    const int  threshold_y     = fp->track[1] << (!(sample_mode && blur_first) + 1);
-    const int  threshold_cb    = fp->track[2] << (!(sample_mode && blur_first) + 1);
-    const int  threshold_cr    = fp->track[3] << (!(sample_mode && blur_first) + 1);
-    const int  b_start = (band.block_count_x * band.block_count_y *  thread_id) / thread_num;
-    const int  b_end   = (band.block_count_x * band.block_count_y * (thread_id+1)) / thread_num;
+    const int rand_each_frame = fp->check[1];
+    const int range           = fp->track[0];
+    const int threshold_y     = fp->track[1] << (!(sample_mode && blur_first) + 1);
+    const int threshold_cb    = fp->track[2] << (!(sample_mode && blur_first) + 1);
+    const int threshold_cr    = fp->track[3] << (!(sample_mode && blur_first) + 1);
+    const int b_start = (band.block_count_x * band.block_count_y *  thread_id) / thread_num;
+    const int b_end   = (band.block_count_x * band.block_count_y * (thread_id+1)) / thread_num;
     __m256i yRefMulti  = _mm256_unpacklo_epi16(_mm256_set1_epi16(max_w), yOne256);
     __m256i yGather0, yGather1, yGather2, yGather3, yGather4, yGather5, yGather6, yGather7;
     
@@ -648,7 +650,7 @@ static void __forceinline decrease_banding_mode1_avx2(int thread_id, int thread_
         int x_start, x_end, y_start, y_end;
         band_get_block_range(ib, width, height, &x_start, &x_end, &y_start, &y_end);
         int y;
-        const int y_main_end = min(y_end, height - 1);
+        const int y_main_end = std::min(y_end, height - 1);
         for (y = y_start; y < y_main_end; y++) {
             PIXEL_YC *ycp_src = fpip->ycp_edit + y * max_w + x_start;
             PIXEL_YC *ycp_dst = fpip->ycp_temp + y * max_w + x_start;
@@ -778,13 +780,13 @@ static void __forceinline decrease_banding_mode1_avx2(int thread_id, int thread_
     const int seed    = fp->track[7];
     const int ditherY = fp->track[4];
     const int ditherC = fp->track[5];
-    const int  rand_each_frame = fp->check[1];
-    const BYTE range           = fp->track[0];
-    const int  threshold_y     = fp->track[1] << (!(sample_mode && blur_first) + 1);
-    const int  threshold_cb    = fp->track[2] << (!(sample_mode && blur_first) + 1);
-    const int  threshold_cr    = fp->track[3] << (!(sample_mode && blur_first) + 1);
-    const int  b_start = (band.block_count_x * band.block_count_y *  thread_id) / thread_num;
-    const int  b_end   = (band.block_count_x * band.block_count_y * (thread_id+1)) / thread_num;
+    const int rand_each_frame = fp->check[1];
+    const int range           = fp->track[0];
+    const int threshold_y     = fp->track[1] << (!(sample_mode && blur_first) + 1);
+    const int threshold_cb    = fp->track[2] << (!(sample_mode && blur_first) + 1);
+    const int threshold_cr    = fp->track[3] << (!(sample_mode && blur_first) + 1);
+    const int b_start = (band.block_count_x * band.block_count_y *  thread_id) / thread_num;
+    const int b_end   = (band.block_count_x * band.block_count_y * (thread_id+1)) / thread_num;
     __m256i yRefMulti  = _mm256_unpacklo_epi16(_mm256_set1_epi16(max_w), yOne256);
     
     alignas(32) BYTE     ref[32];
@@ -830,7 +832,7 @@ static void __forceinline decrease_banding_mode1_avx2(int thread_id, int thread_
         int x_start, x_end, y_start, y_end;
         band_get_block_range(ib, width, height, &x_start, &x_end, &y_start, &y_end);
         int y;
-        const int y_main_end = min(y_end, height - 1);
+        const int y_main_end = std::min(y_end, height - 1);
         for (y = y_start; y < y_main_end; y++) {
             PIXEL_YC *ycp_src = fpip->ycp_edit + y * max_w + x_start;
             PIXEL_YC *ycp_dst = fpip->ycp_temp + y * max_w + x_start;
@@ -963,13 +965,13 @@ static void __forceinline decrease_banding_mode2_avx2(int thread_id, int thread_
     const int seed    = fp->track[7];
     const int ditherY = fp->track[4];
     const int ditherC = fp->track[5];
-    const int  rand_each_frame = fp->check[1];
-    const BYTE range           = fp->track[0];
-    const int  threshold_y     = fp->track[1] << (!(sample_mode && blur_first) + 1);
-    const int  threshold_cb    = fp->track[2] << (!(sample_mode && blur_first) + 1);
-    const int  threshold_cr    = fp->track[3] << (!(sample_mode && blur_first) + 1);
-    const int  b_start = (band.block_count_x * band.block_count_y *  thread_id) / thread_num;
-    const int  b_end   = (band.block_count_x * band.block_count_y * (thread_id+1)) / thread_num;
+    const int rand_each_frame = fp->check[1];
+    const int range           = fp->track[0];
+    const int threshold_y     = fp->track[1] << (!(sample_mode && blur_first) + 1);
+    const int threshold_cb    = fp->track[2] << (!(sample_mode && blur_first) + 1);
+    const int threshold_cr    = fp->track[3] << (!(sample_mode && blur_first) + 1);
+    const int b_start = (band.block_count_x * band.block_count_y *  thread_id) / thread_num;
+    const int b_end   = (band.block_count_x * band.block_count_y * (thread_id+1)) / thread_num;
     __m256i yRefMulti  = _mm256_unpacklo_epi16(_mm256_set1_epi16(max_w), yOne256);
     __m256i yRefMulti2 = _mm256_unpacklo_epi16(yOne256, _mm256_set1_epi16(-max_w));
     
@@ -1017,7 +1019,7 @@ static void __forceinline decrease_banding_mode2_avx2(int thread_id, int thread_
         int x_start, x_end, y_start, y_end;
         band_get_block_range(ib, width, height, &x_start, &x_end, &y_start, &y_end);
         int y;
-        const int y_main_end = min(y_end, height - 1);
+        const int y_main_end = std::min(y_end, height - 1);
         for (y = y_start; y < y_main_end; y++) {
             PIXEL_YC *ycp_src = fpip->ycp_edit + y * max_w + x_start;
             PIXEL_YC *ycp_dst = fpip->ycp_temp + y * max_w + x_start;
