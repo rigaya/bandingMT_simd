@@ -33,6 +33,7 @@
 
 #include "filter.h"
 #include "xor_rand.h"
+#include "cpu_info.h"
 
 #ifdef DEFINE_GLOBAL
     #define EXTERN
@@ -158,6 +159,7 @@ typedef struct {
     int block_count_x;      //ブロック分割数(横)
     int block_count_y;      //ブロック分割数(縦)
     int _seed;              //現在の設定(要チェック)
+    cpu_info_t cpu_info;
     DWORD availableSIMD;
     func_decrease_banding_mode_t decrease_banding[3]; //sample_mode別のバンディング低減関数
 } banding_t;

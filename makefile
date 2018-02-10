@@ -10,7 +10,8 @@ SRCS=bandingMT_simd/banding_sse2.cpp \
      bandingMT_simd/banding_avx2.cpp \
      bandingMT_simd/banding_avx512.cpp \
      bandingMT_simd/banding_func.cpp \
-     bandingMT_simd/bandingMT_simd.cpp
+     bandingMT_simd/bandingMT_simd.cpp \
+     bandingMT_simd/cpu_info.cpp
 RCS=bandingMT_simd/bandingMT_simd.rc
 DEF=bandingMT_simd/bandingMT_simd.def
 

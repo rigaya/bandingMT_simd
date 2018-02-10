@@ -112,6 +112,7 @@ BOOL func_init( FILTER *fp ) {
     ZeroMemory(&band, sizeof(band));
     band.block_count_x = 1;
     band.block_count_y = 1;
+    get_cpu_info(&band.cpu_info);
     return TRUE;
 }
 
@@ -175,6 +176,21 @@ void band_get_block_range(int ib, int width, int height, int *x_start, int *x_fi
     *y_fin   = (height * (by+1)) / band.block_count_y;
 }
 
+static void set_block_size(int width) {
+    band.block_count_x = (width + 127) / 128;
+    band.block_count_y = std::min(band.current_thread_num, 16);
+
+    if (band.cpu_info.max_cache_level >= 2
+        && band.cpu_info.physical_cores == band.cpu_info.caches[1].count) {
+        const int l2cache_size = band.cpu_info.caches[1].size / band.cpu_info.caches[1].count;
+        //キャッシュサイズが大きい場合には、1ブロックを大きくしたほうが速い
+        if (l2cache_size >= 1024 * 1024) {
+            band.block_count_x = (band.block_count_x + 1) / 2;
+            band.block_count_y = band.current_thread_num / band.block_count_x;
+        }
+    }
+}
+
 void multi_thread_func( int thread_id, int thread_num, void *param1, void *param2 )
 {
 //    thread_id    : スレッド番号 ( 0 ～ thread_num-1 )
@@ -231,7 +247,7 @@ void band_perf_check(FILTER *fp, FILTER_PROC_INFO *fpip) {
         dummy_area_count = band.current_thread_num;
         dummy_area = (char **)malloc(sizeof(char *) * band.current_thread_num);
         for (int i = 0; i < band.current_thread_num; i++) {
-            dummy_area[i] = (char *)_aligned_malloc(2 * DUMMY_AREA, 32);
+            dummy_area[i] = (char *)_aligned_malloc(2 * DUMMY_AREA, 64);
         }
     }
     auto gen_key = [](int sample_mode, int block_count_y, int block_count_x) {
@@ -299,8 +315,7 @@ BOOL func_proc( FILTER *fp, FILTER_PROC_INFO *fpip )
         band._seed = seed;
         init_gen_rand();
     }
-    band.block_count_x = (fpip->w + 127) / 128;
-    band.block_count_y = band.current_thread_num;
+    set_block_size(fpip->w);
     
     //    マルチスレッドでフィルタ処理関数を呼ぶ
     fp->exfunc->exec_multi_thread_func(multi_thread_func, fp, fpip);
