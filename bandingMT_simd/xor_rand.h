@@ -34,10 +34,10 @@ static inline uint32_t xor128(xor128_t *p) {
 
 #include <emmintrin.h> //SSE2
 
-typedef union _xor514_t { 
+union alignas(64) xor514_t {
     uint32_t u[16];
     __m128i m[4];
-} __declspec(align(64)) xor514_t;
+};
 
 static void xor514_init(xor514_t*p, uint32_t seed) {
    p->u[0] = seed;
@@ -64,11 +64,11 @@ static __forceinline void xor514(xor514_t *p) {
 
 #include <immintrin.h>
 
-typedef union _xor514x2_t { 
+union alignas(64) xor514x2_t {
     uint32_t u[32];
     __m128i m[8];
     __m256i n[4];
-} __declspec(align(64)) xor514x2_t;
+};
 
 static void xor514x2_init(xor514x2_t*p, uint32_t seed) {
    p->u[0] = seed;
@@ -93,12 +93,12 @@ static __forceinline void xor514x2(xor514x2_t *p) {
     p->n[3] = _mm256_xor_si256(w,s);
 }
 
-typedef union _xor514x4_t {
+union alignas(64) xor514x4_t {
     uint32_t u[64];
     __m128i m[16];
     __m256i n[8];
     __m512i z[4];
-} __declspec(align(64)) xor514x4_t;
+};
 
 static void xor514x4_init(xor514x4_t*p, uint32_t seed) {
     p->u[0] = seed;

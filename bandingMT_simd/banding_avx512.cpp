@@ -222,7 +222,7 @@ static void __forceinline createRandAVX2_4(xor514x4_t *gen_rand, const short *di
     y2 = _mm512_sub_epi16(y2, _mm512_load_si512((__m512i*)(ditherYC + 64)));
 }
 
-static const uint16_t _declspec(align(64)) PACK_YC48_SHUFFLE_AVX512[48] = {
+alignas(64) static const uint16_t PACK_YC48_SHUFFLE_AVX512[48] = {
     0,  1,  2,  4,  5,  6,  8,  9,  10, 12, 13, 14, 16, 17, 18, 20,
     21, 22, 24, 25, 26, 28, 29, 30, 32, 33, 34, 36, 37, 38, 40, 41,
     42, 44, 45, 46, 48, 49, 50, 52, 53, 54, 56, 57, 58, 60, 61, 62
@@ -259,8 +259,8 @@ static void __forceinline decrease_banding_mode0_avx512(int thread_id, int threa
     __m512i yRefMulti  = _mm512_unpacklo_epi16(_mm512_set1_epi16(max_w), zOne512);
     __m512i yGather0, yGather1, yGather2, yGather3;
     
-    BYTE  __declspec(align(64)) ref[64];
-    short __declspec(align(64)) threshold[96];
+    alignas(64) BYTE   ref[64];
+    alignas(64) short  threshold[96];
 
     for (int i = 0; i < 32; i++) {
         threshold[3*i+0] = threshold_y;
@@ -367,11 +367,11 @@ static void __forceinline decrease_banding_mode1_avx512(int thread_id, int threa
     __m512i yRefMulti  = _mm512_unpacklo_epi16(_mm512_set1_epi16(max_w), zOne512);
     __m512i yGather0, yGather1, yGather2, yGather3, yGather4, yGather5, yGather6, yGather7;
     
-    BYTE  __declspec(align(64)) ref[64];
-    short __declspec(align(64)) dither[96];
-    short __declspec(align(64)) ditherYC[96];
-    short __declspec(align(64)) ditherYC2[96];
-    short __declspec(align(64)) threshold[96];
+    alignas(64) BYTE   ref[64];
+    alignas(64) short  dither[96];
+    alignas(64) short  ditherYC[96];
+    alignas(64) short  ditherYC2[96];
+    alignas(64) short  threshold[96];
 
     for (int i = 0; i < 32; i++) {
         threshold[3*i+0] = threshold_y;
@@ -561,11 +561,11 @@ static void __forceinline decrease_banding_mode2_avx512(int thread_id, int threa
     __m512i yRefMulti  = _mm512_unpacklo_epi16(_mm512_set1_epi16(max_w), zOne512);
     __m512i yRefMulti2 = _mm512_unpacklo_epi16(zOne512, _mm512_set1_epi16(-max_w));
     
-    BYTE     __declspec(align(64)) ref[64];
-    short    __declspec(align(64)) dither[96];
-    short    __declspec(align(64)) ditherYC[96];
-    short    __declspec(align(64)) ditherYC2[96];
-    short    __declspec(align(64)) threshold[96];
+    alignas(64) BYTE      ref[64];
+    alignas(64) short     dither[96];
+    alignas(64) short     ditherYC[96];
+    alignas(64) short     ditherYC2[96];
+    alignas(64) short     threshold[96];
 
     for (int i = 0; i < 32; i++) {
         threshold[3*i+0] = threshold_y;

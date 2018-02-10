@@ -243,7 +243,7 @@ static void __forceinline createRandAVX2_4(xor514x2_t *gen_rand, const short *di
 }
 
 #if USE_VPGATHER
-static const char _declspec(align(64)) PACK_YC48_SHUFFLE[96] = {
+alignas(32) static const char PACK_YC48_SHUFFLE[96] = {
     10, 11, 12, 13, -1, -1, -1, -1,  0,  1,  2,  3,  4,  5,  8,  9,
     -1, -1, -1, -1,  0,  1,  2,  3,  4,  5,  8,  9, 10, 11, 12, 13,
      0,  1,  2,  3,  4,  5,  8,  9, 10, 11, 12, 13, -1, -1, -1, -1,
@@ -299,8 +299,8 @@ static void __forceinline decrease_banding_mode0_avx2(int thread_id, int thread_
     __m256i yRefMulti  = _mm256_unpacklo_epi16(_mm256_set1_epi16(max_w), yOne256);
     __m256i yGather0, yGather1, yGather2, yGather3;
     
-    BYTE  __declspec(align(32)) ref[32];
-    short __declspec(align(32)) threshold[48];
+    alignas(32) BYTE  ref[32];
+    alignas(32) short threshold[48];
 
     for (int i = 0; i < 16; i++) {
         threshold[3*i+0] = threshold_y;
@@ -402,10 +402,10 @@ static void __forceinline decrease_banding_mode0_avx2(int thread_id, int thread_
     const int  b_end   = (band.block_count_x * band.block_count_y * (thread_id+1)) / thread_num;
     __m256i yRefMulti  = _mm256_unpacklo_epi16(_mm256_set1_epi16(max_w), yOne256);
     
-    BYTE     __declspec(align(32)) ref[32];
-    PIXEL_YC __declspec(align(32)) ycp_buffer[16];
-    int      __declspec(align(32)) ref_buffer[16];
-    short    __declspec(align(32)) threshold[48];
+    alignas(32) BYTE     ref[32];
+    alignas(32) PIXEL_YC ycp_buffer[16];
+    alignas(32) int      ref_buffer[16];
+    alignas(32) short    threshold[48];
 
     for (int i = 0; i < 16; i++) {
         threshold[3*i+0] = threshold_y;
@@ -607,11 +607,11 @@ static void __forceinline decrease_banding_mode1_avx2(int thread_id, int thread_
     __m256i yRefMulti  = _mm256_unpacklo_epi16(_mm256_set1_epi16(max_w), yOne256);
     __m256i yGather0, yGather1, yGather2, yGather3, yGather4, yGather5, yGather6, yGather7;
     
-    BYTE  __declspec(align(32)) ref[32];
-    short __declspec(align(32)) dither[48];
-    short __declspec(align(32)) ditherYC[48];
-    short __declspec(align(32)) ditherYC2[48];
-    short __declspec(align(32)) threshold[48];
+    alignas(32) BYTE  ref[32];
+    alignas(32) short dither[48];
+    alignas(32) short ditherYC[48];
+    alignas(32) short ditherYC2[48];
+    alignas(32) short threshold[48];
 
     for (int i = 0; i < 16; i++) {
         threshold[3*i+0] = threshold_y;
@@ -787,13 +787,13 @@ static void __forceinline decrease_banding_mode1_avx2(int thread_id, int thread_
     const int  b_end   = (band.block_count_x * band.block_count_y * (thread_id+1)) / thread_num;
     __m256i yRefMulti  = _mm256_unpacklo_epi16(_mm256_set1_epi16(max_w), yOne256);
     
-    BYTE     __declspec(align(32)) ref[32];
-    short    __declspec(align(32)) dither[48];
-    short    __declspec(align(32)) ditherYC[48];
-    short    __declspec(align(32)) ditherYC2[48];
-    PIXEL_YC __declspec(align(32)) ycp_buffer[32];
-    int      __declspec(align(32)) ref_buffer[16];
-    short    __declspec(align(32)) threshold[48];
+    alignas(32) BYTE     ref[32];
+    alignas(32) short    dither[48];
+    alignas(32) short    ditherYC[48];
+    alignas(32) short    ditherYC2[48];
+    alignas(32) PIXEL_YC ycp_buffer[32];
+    alignas(32) int      ref_buffer[16];
+    alignas(32) short    threshold[48];
 
     for (int i = 0; i < 16; i++) {
         threshold[3*i+0] = threshold_y;
@@ -973,13 +973,13 @@ static void __forceinline decrease_banding_mode2_avx2(int thread_id, int thread_
     __m256i yRefMulti  = _mm256_unpacklo_epi16(_mm256_set1_epi16(max_w), yOne256);
     __m256i yRefMulti2 = _mm256_unpacklo_epi16(yOne256, _mm256_set1_epi16(-max_w));
     
-    BYTE     __declspec(align(32)) ref[32];
-    short    __declspec(align(32)) dither[48];
-    short    __declspec(align(32)) ditherYC[48];
-    short    __declspec(align(32)) ditherYC2[48];
-    PIXEL_YC __declspec(align(32)) ycp_buffer[64];
-    int      __declspec(align(32)) ref_buffer[32];
-    short    __declspec(align(32)) threshold[48];
+    alignas(32) BYTE     ref[32];
+    alignas(32) short    dither[48];
+    alignas(32) short    ditherYC[48];
+    alignas(32) short    ditherYC2[48];
+    alignas(32) PIXEL_YC ycp_buffer[64];
+    alignas(32) int      ref_buffer[32];
+    alignas(32) short    threshold[48];
 
     for (int i = 0; i < 16; i++) {
         threshold[3*i+0] = threshold_y;

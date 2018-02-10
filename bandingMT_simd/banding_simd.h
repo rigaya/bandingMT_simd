@@ -105,15 +105,15 @@ static __forceinline __m128i abs_epi16_sse2(__m128i a) {
 #define min3(x, y, z) (min((x), (min((y), (z)))))
 #define _mm_multi6_epi32(a) (_mm_add_epi32(_mm_slli_epi32(a, 1), _mm_slli_epi32(a, 2)))
 
-static const uint16_t _declspec(align(64)) x_range_offset[32] = {
+alignas(64) static const uint16_t x_range_offset[32] = {
     0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15,
     16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31
 };
-static const int _declspec(align(64)) ref_offset[32] = {
+alignas(64) static const int ref_offset[32] = {
      0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15,
     16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31
 };
-static const int _declspec(align(64)) ref_offset_x6_plus_one[32] = {
+alignas(64) static const int ref_offset_x6_plus_one[32] = {
      1,   7,  13,  19,  25,  31,  37,  43,  49,  55,  61,  67,  73,  79,  85,  91,
     97, 103, 109, 115, 121, 127, 133, 139, 145, 151, 157, 163, 169, 175, 181, 187
 };
@@ -257,10 +257,10 @@ static void __forceinline decrease_banding_mode0_simd(int thread_id, int thread_
     const int  b_end   = (band.block_count_x * band.block_count_y * (thread_id+1)) / thread_num;
     __m128i xRefMulti  = _mm_unpacklo_epi16(_mm_set1_epi16(max_w), xOne);
     
-    char     __declspec(align(16)) ref[16];
-    PIXEL_YC __declspec(align(16)) ycp_buffer[8];
-    int      __declspec(align(16)) ref_buffer[8];
-    short    __declspec(align(16)) threshold[24];
+    alignas(16) char     ref[16];
+    alignas(16) PIXEL_YC ycp_buffer[8];
+    alignas(16) int      ref_buffer[8];
+    alignas(16) short    threshold[24];
 
     for (int i = 0; i < 8; i++) {
         threshold[3*i+0] = threshold_y;
@@ -503,13 +503,13 @@ static void __forceinline decrease_banding_mode1_simd(int thread_id, int thread_
     const int  b_end   = (band.block_count_x * band.block_count_y * (thread_id+1)) / thread_num;
     __m128i xRefMulti  = _mm_unpacklo_epi16(_mm_set1_epi16(max_w), xOne);
     
-    char     __declspec(align(16)) ref[16];
-    short    __declspec(align(16)) dither[24];
-    short    __declspec(align(16)) ditherYC[24];
-    short    __declspec(align(16)) ditherYC2[24];
-    PIXEL_YC __declspec(align(16)) ycp_buffer[16];
-    int      __declspec(align(16)) ref_buffer[8];
-    short    __declspec(align(16)) threshold[24];
+    alignas(16) char     ref[16];
+    alignas(16) short    dither[24];
+    alignas(16) short    ditherYC[24];
+    alignas(16) short    ditherYC2[24];
+    alignas(16) PIXEL_YC ycp_buffer[16];
+    alignas(16) int      ref_buffer[8];
+    alignas(16) short    threshold[24];
 
     for (int i = 0; i < 8; i++) {
         threshold[3*i+0] = threshold_y;
@@ -671,13 +671,13 @@ static void __forceinline decrease_banding_mode2_simd(int thread_id, int thread_
     __m128i xRefMulti  = _mm_unpacklo_epi16(_mm_set1_epi16(max_w), xOne);
     __m128i xRefMulti2 = _mm_unpacklo_epi16(xOne, _mm_set1_epi16(-max_w));
     
-    char     __declspec(align(16)) ref[16];
-    short    __declspec(align(16)) dither[24];
-    short    __declspec(align(16)) ditherYC[24];
-    short    __declspec(align(16)) ditherYC2[24];
-    PIXEL_YC _declspec(align(16)) ycp_buffer[32];
-    int      _declspec(align(16)) ref_buffer[16];
-    short    _declspec(align(16)) threshold[24];
+    alignas(16) char     ref[16];
+    alignas(16) short    dither[24];
+    alignas(16) short    ditherYC[24];
+    alignas(16) short    ditherYC2[24];
+    alignas(16) PIXEL_YC ycp_buffer[32];
+    alignas(16) int      ref_buffer[16];
+    alignas(16) short    threshold[24];
 
     for (int i = 0; i < 8; i++) {
         threshold[3*i+0] = threshold_y;
