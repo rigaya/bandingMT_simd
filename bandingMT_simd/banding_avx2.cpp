@@ -26,14 +26,14 @@
 //
 // ------------------------------------------------------------------------------------------
 
-#define USE_SSE 0
-#define USE_AVX2 1
+#define USE_SSE2   0
+#define USE_SSSE3  0
+#define USE_SSE41  0
+#define USE_AVX2   1
 #define USE_AVX512 0
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
-#include <emmintrin.h> //SSE2
-#include <smmintrin.h> //SSE4.1
 #include <immintrin.h> //AVX, AVX2
 #include "banding.h"
 #include "xor_rand.h"

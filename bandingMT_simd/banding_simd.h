@@ -92,19 +92,32 @@ static __forceinline __m128i abs_epi16_sse2(__m128i a) {
     a = _mm_xor_si128(a, xMask);
     return _mm_sub_epi16(a, xMask);
 }
+#define min3(x, y, z) (std::min((x), (std::min((y), (z)))))
 #define xZero  (_mm_setzero_si128())
 #define xOne (_mm_srli_epi16(_mm_cmpeq_epi8(_mm_setzero_si128(), _mm_setzero_si128()), 15))
 #define xTwo (_mm_slli_epi16(xOne, 1))
 #define xEight (_mm_slli_epi16(xOne, 3))
-#define abs_epi16_simd(a) ((simd & SSSE3) ? _mm_abs_epi16((a)) : abs_epi16_sse2((a)))
-#define palignr_epi8_simd(a, b, i) ((simd & SSSE3) ? _mm_alignr_epi8(a,b,i) : palignr_sse2(a,b,i))
-#define blendv_epi8_simd(a, b, mask) ((simd & SSE41) ? _mm_blendv_epi8((a), (b), (mask)) : select_by_mask((a), (b), (mask)))
 #define xArray128_8bit  (_mm_slli_epi64(_mm_packs_epi16(xOne, xOne), 7))
 #define xArray128_16bit (_mm_slli_epi16(xOne, 7))
-#define cvtlo_epi8_epi16(a) ((simd & SSE41) ? (_mm_cvtepi8_epi16((a))) : (_mm_sub_epi16(_mm_unpacklo_epi8(_mm_add_epi8((a), (xArray128_8bit)), (xZero)), (xArray128_16bit))))
-#define cvthi_epi8_epi16(a) ((simd & SSE41) ? (_mm_cvtepi8_epi16(_mm_srli_si128((a), 8))) : (_mm_sub_epi16(_mm_unpackhi_epi8(_mm_add_epi8((a), (xArray128_8bit)), (xZero)), (xArray128_16bit))))
-#define min3(x, y, z) (std::min((x), (std::min((y), (z)))))
 #define _mm_multi6_epi32(a) (_mm_add_epi32(_mm_slli_epi32(a, 1), _mm_slli_epi32(a, 2)))
+
+#if USE_SSSE3
+#define abs_epi16_simd(a) (_mm_abs_epi16(a))
+#define palignr_epi8_simd(a, b, i) _mm_alignr_epi8((a),(b),(i))
+#else
+#define abs_epi16_simd(a) (abs_epi16_sse2(a))
+#define palignr_epi8_simd(a, b, i) palignr_sse2((a),(b),(i))
+#endif
+
+#if USE_SSE41
+#define blendv_epi8_simd(a, b, mask) (_mm_blendv_epi8((a), (b), (mask)))
+#define cvtlo_epi8_epi16(a) (_mm_cvtepi8_epi16((a)))
+#define cvthi_epi8_epi16(a) (_mm_cvtepi8_epi16(_mm_srli_si128((a), 8)))
+#else
+#define blendv_epi8_simd(a, b, mask) (select_by_mask((a), (b), (mask)))
+#define cvtlo_epi8_epi16(a) (_mm_sub_epi16(_mm_unpacklo_epi8(_mm_add_epi8((a), (xArray128_8bit)), (xZero)), (xArray128_16bit)))
+#define cvthi_epi8_epi16(a) (_mm_sub_epi16(_mm_unpackhi_epi8(_mm_add_epi8((a), (xArray128_8bit)), (xZero)), (xArray128_16bit)))
+#endif
 
 alignas(64) static const uint16_t x_range_offset[32] = {
     0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15,
@@ -119,7 +132,7 @@ alignas(64) static const int ref_offset_x6_plus_one[32] = {
     97, 103, 109, 115, 121, 127, 133, 139, 145, 151, 157, 163, 169, 175, 181, 187
 };
 
-static __forceinline __m128i apply_field_mask_128(__m128i xRef, BOOL to_lower_byte, DWORD simd) {
+static __forceinline __m128i apply_field_mask_128(__m128i xRef, BOOL to_lower_byte) {
     __m128i xFeildMask = _mm_slli_epi16(_mm_cmpeq_epi8(_mm_setzero_si128(), _mm_setzero_si128()), 1);
     if (!to_lower_byte)
         xFeildMask = palignr_epi8_simd(xFeildMask, xFeildMask, 1);
@@ -133,15 +146,18 @@ static __forceinline __m128i apply_field_mask_128(__m128i xRef, BOOL to_lower_by
 
 #define SWAP(type,a,b) { type temp = a; a = b; b = temp; }
 
-#if USE_SSE
+#if USE_SSE2 || USE_SSSE3 || USE_SSE41
 //mode012共通 ... ref用乱数の見を発生させる
-static void __forceinline createRandsimd_0(char *ref_ptr, xor514_t *gen_rand, __m128i xRangeYLimit, __m128i& xRangeXLimit0, __m128i& xRangeXLimit1, const DWORD simd) {
-    __m128i x0, x1;
-            //本当は_mm_min_epu16の方がいいが、まあ32768を超えることもないはずなので、SSE4.1がなければ_mm_min_epi16で代用
-    __m128i xRange = (simd & SSE41) ? _mm_min_epu16(xRangeYLimit, _mm_min_epu16(xRangeXLimit0, xRangeXLimit1))
-                                    : _mm_min_epi16(xRangeYLimit, _mm_min_epi16(xRangeXLimit0, xRangeXLimit1));
+static void __forceinline createRandsimd_0(char *ref_ptr, xor514_t *gen_rand, __m128i xRangeYLimit, __m128i& xRangeXLimit0, __m128i& xRangeXLimit1) {
+#if USE_SSE41
+    //本当は_mm_min_epu16の方がいいが、まあ32768を超えることもないはずなので、SSE4.1がなければ_mm_min_epi16で代用
+    __m128i xRange = _mm_min_epu16(xRangeYLimit, _mm_min_epu16(xRangeXLimit0, xRangeXLimit1));
+#else
+    __m128i xRange = _mm_min_epi16(xRangeYLimit, _mm_min_epi16(xRangeXLimit0, xRangeXLimit1));
+#endif
     __m128i xRange2 = _mm_adds_epu16(_mm_slli_epi16(xRange, 1), xOne);
 
+    __m128i x0, x1;
     xor514(gen_rand);
     x0 = _mm_unpacklo_epi8(gen_rand->m[3], _mm_setzero_si128());
     x1 = _mm_unpackhi_epi8(gen_rand->m[3], _mm_setzero_si128());
@@ -172,13 +188,17 @@ static void __forceinline createRandsimd_1(short *dither_ptr, xor514_t *gen_rand
     _mm_store_si128((__m128i*)(dither_ptr + 8), x1);
 }
 //mode12用 ... 次で使うref用乱数とdither用乱数の最後の一つを発生させる
-static void __forceinline createRandsimd_2(short *dither_ptr, char *ref_ptr, xor514_t *gen_rand, const short *ditherYC2, const short *ditherYC, __m128i xRangeYLimit, __m128i& xRangeXLimit0, __m128i& xRangeXLimit1, const DWORD simd) {
-    __m128i x0, x1;
-            //本当は_mm_min_epu16の方がいいが、まあ32768を超えることもないはずなので、SSE4.1がなければ_mm_min_epi16で代用
-    __m128i xRange = (simd & SSE41) ? _mm_min_epu16(xRangeYLimit, _mm_min_epu16(xRangeXLimit0, xRangeXLimit1))
-                                    : _mm_min_epi16(xRangeYLimit, _mm_min_epi16(xRangeXLimit0, xRangeXLimit1));
+static void __forceinline createRandsimd_2(short *dither_ptr, char *ref_ptr, xor514_t *gen_rand,
+    const short *ditherYC2, const short *ditherYC, __m128i xRangeYLimit, __m128i& xRangeXLimit0, __m128i& xRangeXLimit1) {
+#if USE_SSE41
+    //本当は_mm_min_epu16の方がいいが、まあ32768を超えることもないはずなので、SSE4.1がなければ_mm_min_epi16で代用
+    __m128i xRange = _mm_min_epu16(xRangeYLimit, _mm_min_epu16(xRangeXLimit0, xRangeXLimit1));
+#else
+    __m128i xRange = _mm_min_epi16(xRangeYLimit, _mm_min_epi16(xRangeXLimit0, xRangeXLimit1));
+#endif
     __m128i xRange2 = _mm_adds_epu16(_mm_slli_epi16(xRange, 1), xOne);
 
+    __m128i x0, x1;
     xor514(gen_rand);
     x0 = _mm_unpackhi_epi8(gen_rand->m[3], _mm_setzero_si128());
     x0 = _mm_mullo_epi16(x0, _mm_load_si128((__m128i*)(ditherYC2 + 16)));
@@ -200,13 +220,16 @@ static void __forceinline createRandsimd_2(short *dither_ptr, char *ref_ptr, xor
     xRangeXLimit1 = _mm_subs_epu16(xRangeXLimit1, xEight);
 }
 //mode0用 ... ref用乱数のみを発生させる
-static void __forceinline createRandsimd_3(char *ref_ptr, xor514_t *gen_rand, __m128i xRangeYLimit, __m128i& xRangeXLimit0, __m128i& xRangeXLimit1, const DWORD simd) {
-    __m128i x0, x1;
-            //本当は_mm_min_epu16の方がいいが、まあ32768を超えることもないはずなので、SSE4.1がなければ_mm_min_epi16で代用
-    __m128i xRange = (simd & SSE41) ? _mm_min_epu16(xRangeYLimit, _mm_min_epu16(xRangeXLimit0, xRangeXLimit1))
-                                    : _mm_min_epi16(xRangeYLimit, _mm_min_epi16(xRangeXLimit0, xRangeXLimit1));
+static void __forceinline createRandsimd_3(char *ref_ptr, xor514_t *gen_rand, __m128i xRangeYLimit, __m128i& xRangeXLimit0, __m128i& xRangeXLimit1) {
+#if USE_SSE41
+    //本当は_mm_min_epu16の方がいいが、まあ32768を超えることもないはずなので、SSE4.1がなければ_mm_min_epi16で代用
+    __m128i xRange = _mm_min_epu16(xRangeYLimit, _mm_min_epu16(xRangeXLimit0, xRangeXLimit1));
+#else
+    __m128i xRange = _mm_min_epi16(xRangeYLimit, _mm_min_epi16(xRangeXLimit0, xRangeXLimit1));
+#endif
     __m128i xRange2 = _mm_adds_epu16(_mm_slli_epi16(xRange, 1), xOne);
 
+    __m128i x0, x1;
     xor514(gen_rand);
     x0 = _mm_unpacklo_epi8(gen_rand->m[3], _mm_setzero_si128());
     x1 = _mm_unpackhi_epi8(gen_rand->m[3], _mm_setzero_si128());
@@ -237,10 +260,8 @@ static void __forceinline createRandsimd_4(xor514_t *gen_rand, const short *dith
     x2 = _mm_sub_epi16(x2, _mm_load_si128((__m128i*)(ditherYC + 16)));
 }
 
-
-//process_per_field、simdは定数として与え、
-//条件分岐をコンパイル時に削除させる
-static void __forceinline decrease_banding_mode0_simd(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip, BOOL process_per_field, DWORD simd) {
+template<bool process_per_field>
+static void __forceinline decrease_banding_mode0_simd(int thread_id, int thread_num, FILTER *fp, FILTER_PROC_INFO *fpip) {
     const int sample_mode = 0;
     const int max_w  = fpip->max_w;
     const int width = fpip->w;
@@ -286,11 +307,11 @@ static void __forceinline decrease_banding_mode0_simd(int thread_id, int thread_
             __m128i xRangeYLimit = _mm_set1_epi16(min3(range, y, height - y - 1));
             __m128i xRangeXLimit0 = _mm_add_epi16(_mm_load_si128((__m128i*)x_range_offset), _mm_set1_epi16(x_start));
             __m128i xRangeXLimit1 = _mm_subs_epu16(_mm_set1_epi16(width - x_start - 1), _mm_load_si128((__m128i*)x_range_offset));
-            createRandsimd_0(ref, &gen_rand, xRangeYLimit, xRangeXLimit0, xRangeXLimit1, simd);
+            createRandsimd_0(ref, &gen_rand, xRangeYLimit, xRangeXLimit0, xRangeXLimit1);
             for (int i_step = 0, x = (x_end - x_start) - 8; x >= 0; x -= i_step, ycp_src += i_step, ycp_dst += i_step) {
                 __m128i xRef = _mm_loadu_si128((__m128i*)ref);
                 if (process_per_field)
-                    xRef = apply_field_mask_128(xRef, TRUE, simd);
+                    xRef = apply_field_mask_128(xRef, TRUE);
                 __m128i xRefLower = cvtlo_epi8_epi16(xRef);
                 __m128i xRefUpper = cvthi_epi8_epi16(xRef);
 
@@ -300,8 +321,7 @@ static void __forceinline decrease_banding_mode0_simd(int thread_id, int thread_
                 _mm_store_si128((__m128i*)&ref_buffer[0], _mm_multi6_epi32(xRefLower));
                 _mm_store_si128((__m128i*)&ref_buffer[4], _mm_multi6_epi32(xRefUpper));
 
-                if (simd & SSSE3) {
-
+#if USE_SSSE3
                     __m64 m0, m1, m2, m3, m4, m5, m6, m7;
                     m1 = *(__m64*)((BYTE *)ycp_src + ref_buffer[1]);
                     m2 = *(__m64*)((BYTE *)ycp_src + ref_buffer[2]);
@@ -333,9 +353,7 @@ static void __forceinline decrease_banding_mode0_simd(int thread_id, int thread_
                     m5 = _mm_alignr_pi8(m5, m7, 2);
                     *(__m64 *)((BYTE *)ycp_buffer +  0) = m1;
                     *(__m64 *)((BYTE *)ycp_buffer + 24) = m5;
-
-                } else {
-
+#else
                     ycp_buffer[0] = *(PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[0]);
                     ycp_buffer[1] = *(PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[1]);
                     ycp_buffer[2] = *(PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[2]);
@@ -344,9 +362,8 @@ static void __forceinline decrease_banding_mode0_simd(int thread_id, int thread_
                     ycp_buffer[5] = *(PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[5]);
                     ycp_buffer[6] = *(PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[6]);
                     ycp_buffer[7] = *(PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[7]);
-
-                }
-                createRandsimd_3(ref, &gen_rand, xRangeYLimit, xRangeXLimit0, xRangeXLimit1, simd);
+#endif
+                createRandsimd_3(ref, &gen_rand, xRangeYLimit, xRangeXLimit0, xRangeXLimit1);
 
                 __m128i xYCPRef0, xYCPDiff, xYCP, xThreshold, xBase, xMask;
 
@@ -389,105 +406,99 @@ static void __forceinline decrease_banding_mode0_simd(int thread_id, int thread_
 
 #pragma warning (push)
 #pragma warning (disable: 4799) //warning C4799: emms命令がありません
-static void __forceinline gather1(PIXEL_YC *ycp_buffer, const PIXEL_YC *ycp_src, const int *ref_buffer, DWORD simd) {            
-    if (simd & SSSE3) {
-
-        __m64 m0, m1, m2, m3, m4, m5, m6, m7;
-        m1 = *(__m64*)((BYTE *)ycp_src + ref_buffer[1]);
-        m2 = *(__m64*)((BYTE *)ycp_src + ref_buffer[2]);
-        m3 = *(__m64*)((BYTE *)ycp_src + ref_buffer[3]);
-        m5 = *(__m64*)((BYTE *)ycp_src - ref_buffer[1] + 12);
-        m6 = *(__m64*)((BYTE *)ycp_src - ref_buffer[2] + 24);
-        m7 = *(__m64*)((BYTE *)ycp_src - ref_buffer[3] + 36);
-        m0 = m2;
-        m4 = m6;
-        m0 = _mm_slli_si64(m0, 16);
-        m4 = _mm_slli_si64(m4, 16);
-        m3 = _mm_alignr_pi8(m3, m0, 6);
-        m7 = _mm_alignr_pi8(m7, m4, 6);
-        *(__m64 *)((BYTE *)ycp_buffer + 16) = m3;
-        *(__m64 *)((BYTE *)ycp_buffer + 64) = m7;
-        m0 = m1;
-        m4 = m5;
-        m0 = _mm_slli_si64(m0, 16);
-        m4 = _mm_slli_si64(m4, 16);
-        m2 = _mm_alignr_pi8(m2, m0, 4);
-        m6 = _mm_alignr_pi8(m6, m4, 4);
-        m3 = *(__m64*)((BYTE *)ycp_src + ref_buffer[0]);
-        m7 = *(__m64*)((BYTE *)ycp_src - ref_buffer[0] + 0);
-        *(__m64 *)((BYTE *)ycp_buffer +  8) = m2;
-        *(__m64 *)((BYTE *)ycp_buffer + 56) = m6;
-        m3 = _mm_slli_si64(m3, 16);
-        m7 = _mm_slli_si64(m7, 16);
-        m1 = _mm_alignr_pi8(m1, m3, 2);
-        m5 = _mm_alignr_pi8(m5, m7, 2);
-        *(__m64 *)((BYTE *)ycp_buffer +  0) = m1;
-        *(__m64 *)((BYTE *)ycp_buffer + 48) = m5;
-    } else {
-        ycp_buffer[ 0] = *(PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[0]);
-        ycp_buffer[ 1] = *(PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[1]);
-        ycp_buffer[ 2] = *(PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[2]);
-        ycp_buffer[ 3] = *(PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[3]);
-        ycp_buffer[ 8] = *(PIXEL_YC *)((BYTE *)ycp_src - ref_buffer[0]);
-        ycp_buffer[ 9] = *(PIXEL_YC *)((BYTE *)ycp_src - ref_buffer[1] + 12);
-        ycp_buffer[10] = *(PIXEL_YC *)((BYTE *)ycp_src - ref_buffer[2] + 24);
-        ycp_buffer[11] = *(PIXEL_YC *)((BYTE *)ycp_src - ref_buffer[3] + 36);
-    }
+static void __forceinline gather1(PIXEL_YC *ycp_buffer, const PIXEL_YC *ycp_src, const int *ref_buffer) {
+#if USE_SSSE3
+    __m64 m0, m1, m2, m3, m4, m5, m6, m7;
+    m1 = *(__m64*)((BYTE *)ycp_src + ref_buffer[1]);
+    m2 = *(__m64*)((BYTE *)ycp_src + ref_buffer[2]);
+    m3 = *(__m64*)((BYTE *)ycp_src + ref_buffer[3]);
+    m5 = *(__m64*)((BYTE *)ycp_src - ref_buffer[1] + 12);
+    m6 = *(__m64*)((BYTE *)ycp_src - ref_buffer[2] + 24);
+    m7 = *(__m64*)((BYTE *)ycp_src - ref_buffer[3] + 36);
+    m0 = m2;
+    m4 = m6;
+    m0 = _mm_slli_si64(m0, 16);
+    m4 = _mm_slli_si64(m4, 16);
+    m3 = _mm_alignr_pi8(m3, m0, 6);
+    m7 = _mm_alignr_pi8(m7, m4, 6);
+    *(__m64 *)((BYTE *)ycp_buffer + 16) = m3;
+    *(__m64 *)((BYTE *)ycp_buffer + 64) = m7;
+    m0 = m1;
+    m4 = m5;
+    m0 = _mm_slli_si64(m0, 16);
+    m4 = _mm_slli_si64(m4, 16);
+    m2 = _mm_alignr_pi8(m2, m0, 4);
+    m6 = _mm_alignr_pi8(m6, m4, 4);
+    m3 = *(__m64*)((BYTE *)ycp_src + ref_buffer[0]);
+    m7 = *(__m64*)((BYTE *)ycp_src - ref_buffer[0] + 0);
+    *(__m64 *)((BYTE *)ycp_buffer +  8) = m2;
+    *(__m64 *)((BYTE *)ycp_buffer + 56) = m6;
+    m3 = _mm_slli_si64(m3, 16);
+    m7 = _mm_slli_si64(m7, 16);
+    m1 = _mm_alignr_pi8(m1, m3, 2);
+    m5 = _mm_alignr_pi8(m5, m7, 2);
+    *(__m64 *)((BYTE *)ycp_buffer +  0) = m1;
+    *(__m64 *)((BYTE *)ycp_buffer + 48) = m5;
+#else
+    ycp_buffer[ 0] = *(PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[0]);
+    ycp_buffer[ 1] = *(PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[1]);
+    ycp_buffer[ 2] = *(PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[2]);
+    ycp_buffer[ 3] = *(PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[3]);
+    ycp_buffer[ 8] = *(PIXEL_YC *)((BYTE *)ycp_src - ref_buffer[0]);
+    ycp_buffer[ 9] = *(PIXEL_YC *)((BYTE *)ycp_src - ref_buffer[1] + 12);
+    ycp_buffer[10] = *(PIXEL_YC *)((BYTE *)ycp_src - ref_buffer[2] + 24);
+    ycp_buffer[11] = *(PIXEL_YC *)((BYTE *)ycp_src - ref_buffer[3] + 36);
+#endif
 }
 
-static void __forceinline gather2(PIXEL_YC *ycp_buffer, const PIXEL_YC *ycp_src, const int *ref_buffer, DWORD simd) {            
-    if (simd & SSSE3) {
-
-        __m64 m0, m1, m2, m3, m4, m5, m6, m7;
-        m1 = *(__m64*)((BYTE *)ycp_src + ref_buffer[5]);
-        m2 = *(__m64*)((BYTE *)ycp_src + ref_buffer[6]);
-        m3 = *(__m64*)((BYTE *)ycp_src + ref_buffer[7]);
-        m5 = *(__m64*)((BYTE *)ycp_src - ref_buffer[5] + 60);
-        m6 = *(__m64*)((BYTE *)ycp_src - ref_buffer[6] + 72);
-        m7 = *(__m64*)((BYTE *)ycp_src - ref_buffer[7] + 84);
-        m0 = m2;
-        m4 = m6;
-        m0 = _mm_slli_si64(m0, 16);
-        m4 = _mm_slli_si64(m4, 16);
-        m3 = _mm_alignr_pi8(m3, m0, 6);
-        m7 = _mm_alignr_pi8(m7, m4, 6);
-        *(__m64 *)((BYTE *)ycp_buffer + 40) = m3;
-        *(__m64 *)((BYTE *)ycp_buffer + 88) = m7;
-        m0 = m1;
-        m4 = m5;
-        m0 = _mm_slli_si64(m0, 16);
-        m4 = _mm_slli_si64(m4, 16);
-        m2 = _mm_alignr_pi8(m2, m0, 4);
-        m6 = _mm_alignr_pi8(m6, m4, 4);
-        m3 = *(__m64*)((BYTE *)ycp_src + ref_buffer[4]);
-        m7 = *(__m64*)((BYTE *)ycp_src - ref_buffer[4] + 48);
-        *(__m64 *)((BYTE *)ycp_buffer + 32) = m2;
-        *(__m64 *)((BYTE *)ycp_buffer + 80) = m6;
-        m3 = _mm_slli_si64(m3, 16);
-        m7 = _mm_slli_si64(m7, 16);
-        m1 = _mm_alignr_pi8(m1, m3, 2);
-        m5 = _mm_alignr_pi8(m5, m7, 2);
-        *(__m64 *)((BYTE *)ycp_buffer + 24) = m1;
-        *(__m64 *)((BYTE *)ycp_buffer + 72) = m5;
-
-    } else {
-                
-        ycp_buffer[ 4] = *(PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[4]);
-        ycp_buffer[ 5] = *(PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[5]);
-        ycp_buffer[ 6] = *(PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[6]);
-        ycp_buffer[ 7] = *(PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[7]);
-        ycp_buffer[12] = *(PIXEL_YC *)((BYTE *)ycp_src - ref_buffer[4] + 48);
-        ycp_buffer[13] = *(PIXEL_YC *)((BYTE *)ycp_src - ref_buffer[5] + 60);
-        ycp_buffer[14] = *(PIXEL_YC *)((BYTE *)ycp_src - ref_buffer[6] + 72);
-        ycp_buffer[15] = *(PIXEL_YC *)((BYTE *)ycp_src - ref_buffer[7] + 84);
-
-    }
+static void __forceinline gather2(PIXEL_YC *ycp_buffer, const PIXEL_YC *ycp_src, const int *ref_buffer) {
+#if USE_SSSE3
+    __m64 m0, m1, m2, m3, m4, m5, m6, m7;
+    m1 = *(__m64*)((BYTE *)ycp_src + ref_buffer[5]);
+    m2 = *(__m64*)((BYTE *)ycp_src + ref_buffer[6]);
+    m3 = *(__m64*)((BYTE *)ycp_src + ref_buffer[7]);
+    m5 = *(__m64*)((BYTE *)ycp_src - ref_buffer[5] + 60);
+    m6 = *(__m64*)((BYTE *)ycp_src - ref_buffer[6] + 72);
+    m7 = *(__m64*)((BYTE *)ycp_src - ref_buffer[7] + 84);
+    m0 = m2;
+    m4 = m6;
+    m0 = _mm_slli_si64(m0, 16);
+    m4 = _mm_slli_si64(m4, 16);
+    m3 = _mm_alignr_pi8(m3, m0, 6);
+    m7 = _mm_alignr_pi8(m7, m4, 6);
+    *(__m64 *)((BYTE *)ycp_buffer + 40) = m3;
+    *(__m64 *)((BYTE *)ycp_buffer + 88) = m7;
+    m0 = m1;
+    m4 = m5;
+    m0 = _mm_slli_si64(m0, 16);
+    m4 = _mm_slli_si64(m4, 16);
+    m2 = _mm_alignr_pi8(m2, m0, 4);
+    m6 = _mm_alignr_pi8(m6, m4, 4);
+    m3 = *(__m64*)((BYTE *)ycp_src + ref_buffer[4]);
+    m7 = *(__m64*)((BYTE *)ycp_src - ref_buffer[4] + 48);
+    *(__m64 *)((BYTE *)ycp_buffer + 32) = m2;
+    *(__m64 *)((BYTE *)ycp_buffer + 80) = m6;
+    m3 = _mm_slli_si64(m3, 16);
+    m7 = _mm_slli_si64(m7, 16);
+    m1 = _mm_alignr_pi8(m1, m3, 2);
+    m5 = _mm_alignr_pi8(m5, m7, 2);
+    *(__m64 *)((BYTE *)ycp_buffer + 24) = m1;
+    *(__m64 *)((BYTE *)ycp_buffer + 72) = m5;
+#else
+    ycp_buffer[ 4] = *(PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[4]);
+    ycp_buffer[ 5] = *(PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[5]);
+    ycp_buffer[ 6] = *(PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[6]);
+    ycp_buffer[ 7] = *(PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[7]);
+    ycp_buffer[12] = *(PIXEL_YC *)((BYTE *)ycp_src - ref_buffer[4] + 48);
+    ycp_buffer[13] = *(PIXEL_YC *)((BYTE *)ycp_src - ref_buffer[5] + 60);
+    ycp_buffer[14] = *(PIXEL_YC *)((BYTE *)ycp_src - ref_buffer[6] + 72);
+    ycp_buffer[15] = *(PIXEL_YC *)((BYTE *)ycp_src - ref_buffer[7] + 84);
+#endif
 }
 #pragma warning (pop)
 
-//blur_first、process_per_field、simdは定数として与え、
-//条件分岐をコンパイル時に削除させる
-static void __forceinline decrease_banding_mode1_simd(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip, BOOL blur_first,  BOOL process_per_field, DWORD simd) {
+template<bool blur_first, bool process_per_field>
+static void __forceinline decrease_banding_mode1_simd(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
     const int sample_mode = 1;
     const int max_w = fpip->max_w;
     const int width = fpip->w;
@@ -554,11 +565,11 @@ static void __forceinline decrease_banding_mode1_simd(int thread_id, int thread_
             __m128i xRangeYLimit = _mm_set1_epi16(min3(range, y, height - y - 1));
             __m128i xRangeXLimit0 = _mm_add_epi16(_mm_load_si128((__m128i*)x_range_offset), _mm_set1_epi16(x_start));
             __m128i xRangeXLimit1 = _mm_subs_epu16(_mm_set1_epi16(width - x_start - 1), _mm_load_si128((__m128i*)x_range_offset));
-            createRandsimd_0(ref, &gen_rand, xRangeYLimit, xRangeXLimit0, xRangeXLimit1, simd);
+            createRandsimd_0(ref, &gen_rand, xRangeYLimit, xRangeXLimit0, xRangeXLimit1);
             for (int i_step = 0, x = (x_end - x_start) - 8; x >= 0; x -= i_step, ycp_src += i_step, ycp_dst += i_step) {
                 __m128i xRef = _mm_loadu_si128((__m128i*)ref);
                 if (process_per_field)
-                    xRef = apply_field_mask_128(xRef, TRUE, simd);
+                    xRef = apply_field_mask_128(xRef, TRUE);
                 __m128i xRefLower = cvtlo_epi8_epi16(xRef);
                 __m128i xRefUpper = cvthi_epi8_epi16(xRef);
 
@@ -569,7 +580,7 @@ static void __forceinline decrease_banding_mode1_simd(int thread_id, int thread_
                 _mm_store_si128((__m128i*)&ref_buffer[4], _mm_multi6_epi32(xRefUpper));
 
 
-                gather1(ycp_buffer, ycp_src, ref_buffer, simd);
+                gather1(ycp_buffer, ycp_src, ref_buffer);
                 createRandsimd_1(dither, &gen_rand, ditherYC2, ditherYC);
 
                 __m128i xYCPRef0, xYCPRef1, xYCPAvg, xYCPDiff, xYCP, xThreshold, xBase, xMask, xDither;
@@ -589,8 +600,8 @@ static void __forceinline decrease_banding_mode1_simd(int thread_id, int thread_
                 _mm_storeu_si128((__m128i*)((BYTE *)ycp_dst +  0), xYCP);
 
 
-                gather2(ycp_buffer, ycp_src, ref_buffer, simd);
-                createRandsimd_2(dither, ref, &gen_rand, ditherYC2, ditherYC, xRangeYLimit, xRangeXLimit0, xRangeXLimit1, simd);
+                gather2(ycp_buffer, ycp_src, ref_buffer);
+                createRandsimd_2(dither, ref, &gen_rand, ditherYC2, ditherYC, xRangeYLimit, xRangeXLimit0, xRangeXLimit1);
 
                 xYCPRef0 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer +  16));
                 xYCPRef1 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer +  64));
@@ -652,9 +663,8 @@ static void __forceinline decrease_banding_mode1_simd(int thread_id, int thread_
     band.gen_rand[thread_id] = gen_rand;
 }
 
-//blur_first、process_per_field、simdは定数として与え、
-//条件分岐をコンパイル時に削除させる
-static void __forceinline decrease_banding_mode2_simd(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip, BOOL blur_first,  BOOL process_per_field, DWORD simd) {
+template<bool blur_first, bool process_per_field>
+static void __forceinline decrease_banding_mode2_simd(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
     const int sample_mode = 2;
     const int max_w  = fpip->max_w;
     const int width = fpip->w;
@@ -722,18 +732,18 @@ static void __forceinline decrease_banding_mode2_simd(int thread_id, int thread_
             __m128i xRangeYLimit = _mm_set1_epi16(min3(range, y, height - y - 1));
             __m128i xRangeXLimit0 = _mm_add_epi16(_mm_load_si128((__m128i*)x_range_offset), _mm_set1_epi16(x_start));
             __m128i xRangeXLimit1 = _mm_subs_epu16(_mm_set1_epi16(width - x_start - 1), _mm_load_si128((__m128i*)x_range_offset));
-            createRandsimd_0(ref, &gen_rand, xRangeYLimit, xRangeXLimit0, xRangeXLimit1, simd);
+            createRandsimd_0(ref, &gen_rand, xRangeYLimit, xRangeXLimit0, xRangeXLimit1);
             for (int i_step = 0, x = (x_end - x_start) - 8; x >= 0; x -= i_step, ycp_src += i_step, ycp_dst += i_step) {
                 __m128i xRef = _mm_loadu_si128((__m128i*)ref);
                 if (process_per_field) {
-                    __m128i xRef2 = apply_field_mask_128(xRef, TRUE, simd);
+                    __m128i xRef2 = apply_field_mask_128(xRef, TRUE);
                     __m128i xRefLower = cvtlo_epi8_epi16(xRef2);
                     __m128i xRefUpper = cvthi_epi8_epi16(xRef2);
 
                     _mm_store_si128((__m128i*)&ref_buffer[0], _mm_multi6_epi32(_mm_add_epi32(_mm_madd_epi16(xRefLower, xRefMulti), _mm_load_si128((__m128i*)&ref_offset[0]))));
                     _mm_store_si128((__m128i*)&ref_buffer[4], _mm_multi6_epi32(_mm_add_epi32(_mm_madd_epi16(xRefUpper, xRefMulti), _mm_load_si128((__m128i*)&ref_offset[4]))));
 
-                    xRef2 = apply_field_mask_128(xRef, FALSE, simd);
+                    xRef2 = apply_field_mask_128(xRef, FALSE);
                     xRefLower = cvtlo_epi8_epi16(xRef2);
                     xRefUpper = cvthi_epi8_epi16(xRef2);
 
@@ -750,9 +760,9 @@ static void __forceinline decrease_banding_mode2_simd(int thread_id, int thread_
                     _mm_store_si128((__m128i*)&ref_buffer[12], _mm_multi6_epi32(_mm_add_epi32(_mm_madd_epi16(xRefUpper, xRefMulti2), _mm_load_si128((__m128i*)&ref_offset[4]))));
                 }
 
-                gather1(ycp_buffer +  0, ycp_src, ref_buffer + 0, simd);
+                gather1(ycp_buffer +  0, ycp_src, ref_buffer + 0);
                 createRandsimd_1(dither, &gen_rand, ditherYC2, ditherYC);
-                gather1(ycp_buffer + 16, ycp_src, ref_buffer + 8, simd);
+                gather1(ycp_buffer + 16, ycp_src, ref_buffer + 8);
 
                 __m128i xYCPRef0, xYCPRef1, xYCPRef2, xYCPRef3;
                 __m128i xYCPAvg, xYCPDiff, xYCP, xThreshold, xBase, xMask, xDither;
@@ -777,9 +787,9 @@ static void __forceinline decrease_banding_mode2_simd(int thread_id, int thread_
                 xYCP     = _mm_adds_epi16(xBase, xDither);
                 _mm_storeu_si128((__m128i*)((BYTE *)ycp_dst +  0), xYCP);
 
-                gather2(ycp_buffer +  0, ycp_src, ref_buffer + 0, simd);
-                createRandsimd_2(dither, ref, &gen_rand, ditherYC2, ditherYC, xRangeYLimit, xRangeXLimit0, xRangeXLimit1, simd);
-                gather2(ycp_buffer + 16, ycp_src, ref_buffer + 8, simd);
+                gather2(ycp_buffer +  0, ycp_src, ref_buffer + 0);
+                createRandsimd_2(dither, ref, &gen_rand, ditherYC2, ditherYC, xRangeYLimit, xRangeXLimit0, xRangeXLimit1);
+                gather2(ycp_buffer + 16, ycp_src, ref_buffer + 8);
 
                 xYCPRef0 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer +  16));
                 xYCPRef1 = _mm_load_si128((__m128i*)((BYTE*)ycp_buffer +  64));

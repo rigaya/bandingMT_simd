@@ -43,6 +43,8 @@
 //---------------------------------------------------------------------
 //        フィルタ構造体定義
 //---------------------------------------------------------------------
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wwrite-strings"
 #define    TRACK_N    8                                                                                    //  トラックバーの数
 TCHAR    *track_name[] =        {"range",  "Y", "Cb", "Cr","ditherY", "ditherC", "sample", "seed" };    //  トラックバーの名前
 int        track_default[] =    {     15,  15,   15,    15,     15,        15,         1,     0   };    //  トラックバーの初期値
@@ -95,6 +97,7 @@ FILTER_DLL filter = {
     NULL,                        //    セーブが開始される直前に呼ばれる関数へのポインタ (NULLなら呼ばれません)
     NULL,                        //    セーブが終了した直前に呼ばれる関数へのポインタ (NULLなら呼ばれません)
 };
+#pragma GCC diagnostic pop
 
 
 //---------------------------------------------------------------------

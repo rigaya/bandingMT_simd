@@ -26,6 +26,10 @@
 //
 // ------------------------------------------------------------------------------------------
 
+#define USE_SSE2   0
+#define USE_SSSE3  0
+#define USE_SSE41  0
+#define USE_AVX2   0
 #define USE_AVX512 1
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN

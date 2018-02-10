@@ -26,61 +26,57 @@
 //
 // ------------------------------------------------------------------------------------------
 
-
 #define USE_SSE2   0
-#define USE_SSSE3  0
-#define USE_SSE41  1
+#define USE_SSSE3  1
+#define USE_SSE41  0
 #define USE_AVX2   0
 #define USE_AVX512 0
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
-#include <smmintrin.h> //SSE4.1
+#include <algorithm>
+#include <tmmintrin.h> //SSSE3
 #include "banding.h"
 #include "xor_rand.h"
 #include "filter.h"
 #include "banding_simd.h"
 
-#if _MSC_VER >= 1800 && !defined(__AVX__) && !defined(_DEBUG)
-static_assert(false, "do not forget to set /arch:AVX or /arch:AVX2 for this file.");
-#endif
-
-void decrease_banding_mode0_p_avx(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
+void decrease_banding_mode0_p_ssse3(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
     decrease_banding_mode0_simd<false>(thread_id, thread_num, fp, fpip);
 }
 
-void decrease_banding_mode0_i_avx(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
+void decrease_banding_mode0_i_ssse3(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
     decrease_banding_mode0_simd<true>(thread_id, thread_num, fp, fpip);
 }
 
-void decrease_banding_mode1_blur_first_p_avx(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
+void decrease_banding_mode1_blur_first_p_ssse3(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
     decrease_banding_mode1_simd<true, false>(thread_id, thread_num, fp, fpip);
 }
 
-void decrease_banding_mode1_blur_first_i_avx(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
+void decrease_banding_mode1_blur_first_i_ssse3(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
     decrease_banding_mode1_simd<true, true>(thread_id, thread_num, fp, fpip);
 }
 
-void decrease_banding_mode1_blur_later_p_avx(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
+void decrease_banding_mode1_blur_later_p_ssse3(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
     decrease_banding_mode1_simd<false, false>(thread_id, thread_num, fp, fpip);
 }
 
-void decrease_banding_mode1_blur_later_i_avx(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
+void decrease_banding_mode1_blur_later_i_ssse3(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
     decrease_banding_mode1_simd<false, true>(thread_id, thread_num, fp, fpip);
 }
 
-void decrease_banding_mode2_blur_first_p_avx(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
+void decrease_banding_mode2_blur_first_p_ssse3(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
     decrease_banding_mode2_simd<true, false>(thread_id, thread_num, fp, fpip);
 }
 
-void decrease_banding_mode2_blur_first_i_avx(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
+void decrease_banding_mode2_blur_first_i_ssse3(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
     decrease_banding_mode2_simd<true, true>(thread_id, thread_num, fp, fpip);
 }
 
-void decrease_banding_mode2_blur_later_p_avx(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
+void decrease_banding_mode2_blur_later_p_ssse3(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
     decrease_banding_mode2_simd<false, false>(thread_id, thread_num, fp, fpip);
 }
 
-void decrease_banding_mode2_blur_later_i_avx(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
+void decrease_banding_mode2_blur_later_i_ssse3(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
     decrease_banding_mode2_simd<false, true>(thread_id, thread_num, fp, fpip);
 }
