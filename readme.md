@@ -1,7 +1,7 @@
 
 # バンディング低減MT SIMD
   by rigaya  
-  original idea by [がらくたハウスのがらくた置き場様](http://www.geocities.jp/flash3kyuu/
+  original idea by [がらくたハウスのがらくた置き場様](http://www.geocities.jp/flash3kyuu/)
 
 バンディング低減MT SIMDは[がらくたハウスのがらくた置き場様](http://www.geocities.jp/flash3kyuu/)の
 バンディング低減フィルタMTを勝手に高速化したものです。
