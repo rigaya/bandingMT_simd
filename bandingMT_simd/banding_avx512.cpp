@@ -85,13 +85,17 @@ static void __forceinline avx512_memcpy(BYTE *dst, BYTE *src, int size) {
     _mm512_storeu_si512((__m512i*)(dst_tmp + 96), y3);
 }
 
+static __forceinline __m512i _mm512_slli1_epi16(__m512i y) {
+    return _mm512_add_epi16(y, y);
+}
+
 #define zAllBit (_mm512_ternarylogic_epi32(_mm512_setzero_si512(), _mm512_setzero_si512(), _mm512_setzero_si512(), 0xff))
 #define zOne512 (_mm512_srli_epi16(zAllBit, 15))
-#define zTwo512 (_mm512_slli_epi16(zOne512, 1))
+#define zTwo512 (_mm512_slli1_epi16(zOne512))
 #define zC_16   (_mm512_slli_epi16(zOne512, 4))
 
 static __forceinline __m512i _mm512_multi6_epi32(__m512i a) {
-    return _mm512_add_epi32(_mm512_slli_epi32(a, 1), _mm512_slli_epi32(a, 2));
+    return _mm512_add_epi32(_mm512_add_epi32(a, a), _mm512_slli_epi32(a, 2));
 }
 static __forceinline __m512i _mm512_multi3_epi32(__m512i a) {
     return _mm512_add_epi32(a, _mm512_add_epi32(a, a));
@@ -103,14 +107,13 @@ static __forceinline __m512i _mm512_neg_epi32(__m512i y) {
 static __forceinline __m512i _mm512_neg_epi16(__m512i y) {
     return _mm512_sub_epi16(_mm512_setzero_si512(), y);
 }
-
 static __forceinline int limit_1_to_32(int value) {
     int cmp_ret = (value>=32);
     return (cmp_ret<<5) + (value & (0x1f & (~(0-cmp_ret)))) + (value == 0);
 }
 
 static __forceinline __m512i apply_field_mask_512(__m512i yRef, BOOL to_lower_byte) {
-    __m512i yFeildMask = _mm512_slli_epi16(_mm512_ternarylogic_epi32(_mm512_setzero_si512(), _mm512_setzero_si512(), _mm512_setzero_si512(), 0xff), 1);
+    __m512i yFeildMask = _mm512_slli1_epi16(_mm512_ternarylogic_epi32(_mm512_setzero_si512(), _mm512_setzero_si512(), _mm512_setzero_si512(), 0xff));
     if (!to_lower_byte) //16bitの下位バイトに適用するかどうか
         yFeildMask = _mm512_alignr_epi8(yFeildMask, yFeildMask, 1);
     //負かどうか
@@ -118,7 +121,7 @@ static __forceinline __m512i apply_field_mask_512(__m512i yRef, BOOL to_lower_by
     __m512i yFieldMaskHit = _mm512_andnot_si512(yFeildMask, yRef);
     yRef = _mm512_and_si512(yRef, yFeildMask);
     //yFieldMaskHitかつ負なら+2する必要がある
-    yRef = _mm512_mask_add_epi8(yRef, yMaskNeg, yRef, _mm512_slli_epi16(yFieldMaskHit, 1));
+    yRef = _mm512_mask_add_epi8(yRef, yMaskNeg, yRef, _mm512_slli1_epi16(yFieldMaskHit));
     return yRef;
 }
 //mode012共通 ... ref用乱数の見を発生させる
@@ -126,7 +129,7 @@ static void __forceinline createRandAVX2_0(BYTE *ref_ptr, xor514x4_t *gen_rand, 
     __m512i y0, y1;
     __m256i x0, x1;
     __m512i zRange = _mm512_min_epu16(zRangeYLimit, _mm512_min_epu16(zRangeXLimit0, _mm512_max_epi16(zRangeXLimit1, _mm512_setzero_si512())));
-    __m512i zRange2 = _mm512_adds_epu16(_mm512_slli_epi16(zRange, 1), zOne512);
+    __m512i zRange2 = _mm512_adds_epu16(_mm512_slli1_epi16(zRange), zOne512);
 
     xor514x4(gen_rand);
     x0 = gen_rand->n[6];
@@ -164,7 +167,7 @@ static void __forceinline createRandAVX2_2(short *dither_ptr, BYTE *ref_ptr, xor
     __m512i y0, y1;
     __m256i x0, x1;
     __m512i zRange = _mm512_min_epu16(zRangeYLimit, _mm512_min_epu16(zRangeXLimit0, _mm512_max_epi16(zRangeXLimit1, _mm512_setzero_si512())));
-    __m512i zRange2 = _mm512_adds_epu16(_mm512_slli_epi16(zRange, 1), zOne512);
+    __m512i zRange2 = _mm512_add_epi16(_mm512_slli1_epi16(zRange), zOne512);
 
     xor514x4(gen_rand);
     x1 = gen_rand->n[7];
@@ -193,7 +196,7 @@ static void __forceinline createRandAVX2_3(BYTE *ref_ptr, xor514x4_t *gen_rand, 
     __m512i y0, y1;
     __m256i x0, x1;
     __m512i zRange = _mm512_min_epu16(zRangeYLimit, _mm512_min_epu16(zRangeXLimit0, _mm512_max_epi16(zRangeXLimit1, _mm512_setzero_si512())));
-    __m512i zRange2 = _mm512_adds_epu16(_mm512_slli_epi16(zRange, 1), zOne512);
+    __m512i zRange2 = _mm512_add_epi16(_mm512_slli1_epi16(zRange), zOne512);
 
     xor514x4(gen_rand);
     x0 = gen_rand->n[6];
@@ -295,7 +298,7 @@ static void __forceinline decrease_banding_mode0_avx512(int thread_id, int threa
             for (int i_step = 0, x = (x_end - x_start) - 32; x >= 0; x -= i_step, ycp_src += i_step, ycp_dst += i_step) {
                 __m512i yRef = _mm512_loadu_si512((__m512i*)ref);
                 if (process_per_field) {
-                    __m512i yFeildMask = _mm512_slli_epi16(zAllBit, 1);
+                    __m512i yFeildMask = _mm512_slli1_epi16(zAllBit);
                     yRef = _mm512_and_si512(yRef, yFeildMask);
                 }
                 __m512i yRefUpper = _mm512_cvtepi8_epi16(_mm512_extracti64x4_epi64(yRef, 1));
@@ -393,9 +396,9 @@ static void __forceinline decrease_banding_mode1_avx512(int thread_id, int threa
         __m512i y0 = _mm512_load_si512((__m512i *)(ditherYC +  0));
         __m512i y1 = _mm512_load_si512((__m512i *)(ditherYC + 32));
         __m512i y2 = _mm512_load_si512((__m512i *)(ditherYC + 64));
-        y0 = _mm512_slli_epi16(y0, 1);
-        y1 = _mm512_slli_epi16(y1, 1);
-        y2 = _mm512_slli_epi16(y2, 1);
+        y0 = _mm512_slli1_epi16(y0);
+        y1 = _mm512_slli1_epi16(y1);
+        y2 = _mm512_slli1_epi16(y2);
         y0 = _mm512_add_epi16(y0, zOne512);
         y1 = _mm512_add_epi16(y1, zOne512);
         y2 = _mm512_add_epi16(y2, zOne512);
@@ -587,9 +590,9 @@ static void __forceinline decrease_banding_mode2_avx512(int thread_id, int threa
         __m512i y0 = _mm512_load_si512((__m512i *)(ditherYC +  0));
         __m512i y1 = _mm512_load_si512((__m512i *)(ditherYC + 32));
         __m512i y2 = _mm512_load_si512((__m512i *)(ditherYC + 64));
-        y0 = _mm512_slli_epi16(y0, 1);
-        y1 = _mm512_slli_epi16(y1, 1);
-        y2 = _mm512_slli_epi16(y2, 1);
+        y0 = _mm512_slli1_epi16(y0);
+        y1 = _mm512_slli1_epi16(y1);
+        y2 = _mm512_slli1_epi16(y2);
         y0 = _mm512_add_epi16(y0, zOne512);
         y1 = _mm512_add_epi16(y1, zOne512);
         y2 = _mm512_add_epi16(y2, zOne512);

@@ -107,10 +107,10 @@ static void __forceinline avx2_memcpy(BYTE *dst, BYTE *src, int size) {
 #define _mm256_slli256_si256(a, i) ((i<=16) ? _mm256_alignr_epi8(a, _mm256_permute2x128_si256(a, a, (0x00<<4) + 0x08), MM_ABS(16-i)) : _mm256_bslli_epi128(_mm256_permute2x128_si256(a, a, (0x00<<4) + 0x08), MM_ABS(i-16)))
 
 static __forceinline __m256i _mm256_multi6_epi32(__m256i a) {
-    return _mm256_add_epi32(_mm256_slli_epi32(a, 1), _mm256_slli_epi32(a, 2));
+    return _mm256_add_epi32(_mm256_add_epi32(a, a), _mm256_slli_epi32(a, 2));
 }
 static __forceinline __m256i _mm256_multi3_epi32(__m256i a) {
-    return _mm256_add_epi32(a, _mm256_slli_epi32(a, 1));
+    return _mm256_add_epi32(a, _mm256_add_epi32(a, a));
 }
 
 static __forceinline __m256i _mm256_neg_epi32(__m256i y) {
@@ -119,6 +119,9 @@ static __forceinline __m256i _mm256_neg_epi32(__m256i y) {
 static __forceinline __m256i _mm256_neg_epi16(__m256i y) {
     return _mm256_sub_epi16(_mm256_setzero_si256(), y);
 }
+static __forceinline __m256i _mm256_slli1_epi16(__m256i y) {
+    return _mm256_add_epi16(y, y);
+}
 
 static __forceinline int limit_1_to_16(int value) {
     int cmp_ret = (value>=16);
@@ -126,14 +129,14 @@ static __forceinline int limit_1_to_16(int value) {
 }
 
 static __forceinline __m256i apply_field_mask_256(__m256i yRef, BOOL to_lower_byte) {
-    __m256i yFeildMask = _mm256_slli_epi16(_mm256_cmpeq_epi8(_mm256_setzero_si256(), _mm256_setzero_si256()), 1);
+    __m256i yFeildMask = _mm256_slli1_epi16(_mm256_cmpeq_epi8(_mm256_setzero_si256(), _mm256_setzero_si256()));
     if (!to_lower_byte)
         yFeildMask = _mm256_alignr_epi8(yFeildMask, yFeildMask, 1);
     __m256i yMaskNeg = _mm256_cmpgt_epi8(_mm256_setzero_si256(), yRef);
     __m256i yFieldMaskHit = _mm256_andnot_si256(yFeildMask, yRef);
     yFieldMaskHit = _mm256_and_si256(yFieldMaskHit, yMaskNeg);
     yRef = _mm256_and_si256(yRef, yFeildMask);
-    yRef = _mm256_add_epi16(yRef, _mm256_slli_epi16(yFieldMaskHit, 1));
+    yRef = _mm256_add_epi16(yRef, _mm256_slli1_epi16(yFieldMaskHit));
     return yRef;
 }
 
@@ -142,7 +145,7 @@ static void __forceinline createRandAVX2_0(BYTE *ref_ptr, xor514x2_t *gen_rand, 
     __m256i y0, y1;
     __m128i x0, x1;
     __m256i yRange = _mm256_min_epu16(yRangeYLimit, _mm256_min_epu16(yRangeXLimit0, yRangeXLimit1));
-    __m256i yRange2 = _mm256_adds_epu16(_mm256_slli_epi16(yRange, 1), yOne256);
+    __m256i yRange2 = _mm256_adds_epu16(_mm256_slli1_epi16(yRange), yOne256);
 
     xor514x2(gen_rand);
     x0 = gen_rand->m[6];
@@ -180,7 +183,7 @@ static void __forceinline createRandAVX2_2(short *dither_ptr, BYTE *ref_ptr, xor
     __m256i y0, y1;
     __m128i x0, x1;
     __m256i yRange = _mm256_min_epu16(yRangeYLimit, _mm256_min_epu16(yRangeXLimit0, yRangeXLimit1));
-    __m256i yRange2 = _mm256_adds_epu16(_mm256_slli_epi16(yRange, 1), yOne256);
+    __m256i yRange2 = _mm256_add_epi16(_mm256_slli1_epi16(yRange), yOne256);
 
     xor514x2(gen_rand);
     x1 = gen_rand->m[7];
@@ -209,7 +212,7 @@ static void __forceinline createRandAVX2_3(BYTE *ref_ptr, xor514x2_t *gen_rand, 
     __m256i y0, y1;
     __m128i x0, x1;
     __m256i yRange = _mm256_min_epu16(yRangeYLimit, _mm256_min_epu16(yRangeXLimit0, yRangeXLimit1));
-    __m256i yRange2 = _mm256_adds_epu16(_mm256_slli_epi16(yRange, 1), yOne256);
+    __m256i yRange2 = _mm256_add_epi16(_mm256_slli1_epi16(yRange), yOne256);
 
     xor514x2(gen_rand);
     x0 = gen_rand->m[6];
@@ -331,7 +334,7 @@ static void __forceinline decrease_banding_mode0_avx2(int thread_id, int thread_
             for (int i_step = 0, x = (x_end - x_start) - 16; x >= 0; x -= i_step, ycp_src += i_step, ycp_dst += i_step) {
                 __m256i yRef = _mm256_loadu_si256((__m256i*)ref);
                 if (process_per_field) {
-                    __m256i yFeildMask = _mm256_slli_epi16(_mm256_cmpeq_epi8(_mm256_setzero_si256(), _mm256_setzero_si256()), 1);
+                    __m256i yFeildMask = _mm256_slli1_epi16(_mm256_cmpeq_epi8(_mm256_setzero_si256(), _mm256_setzero_si256()));
                     yRef = _mm256_and_si256(yRef, yFeildMask);
                 }
                 __m256i yRefUpper = _mm256_cvtepi8_epi16(_mm256_extracti128_si256(yRef, 1));
@@ -629,9 +632,9 @@ static void __forceinline decrease_banding_mode1_avx2(int thread_id, int thread_
         __m256i y0 = _mm256_load_si256((__m256i *)(ditherYC +  0));
         __m256i y1 = _mm256_load_si256((__m256i *)(ditherYC + 16));
         __m256i y2 = _mm256_load_si256((__m256i *)(ditherYC + 32));
-        y0 = _mm256_slli_epi16(y0, 1);
-        y1 = _mm256_slli_epi16(y1, 1);
-        y2 = _mm256_slli_epi16(y2, 1);
+        y0 = _mm256_slli1_epi16(y0);
+        y1 = _mm256_slli1_epi16(y1);
+        y2 = _mm256_slli1_epi16(y2);
         y0 = _mm256_add_epi16(y0, yOne256);
         y1 = _mm256_add_epi16(y1, yOne256);
         y2 = _mm256_add_epi16(y2, yOne256);
@@ -811,9 +814,9 @@ static void __forceinline decrease_banding_mode1_avx2(int thread_id, int thread_
         __m256i y0 = _mm256_load_si256((__m256i *)(ditherYC +  0));
         __m256i y1 = _mm256_load_si256((__m256i *)(ditherYC + 16));
         __m256i y2 = _mm256_load_si256((__m256i *)(ditherYC + 32));
-        y0 = _mm256_slli_epi16(y0, 1);
-        y1 = _mm256_slli_epi16(y1, 1);
-        y2 = _mm256_slli_epi16(y2, 1);
+        y0 = _mm256_slli1_epi16(y0);
+        y1 = _mm256_slli1_epi16(y1);
+        y2 = _mm256_slli1_epi16(y2);
         y0 = _mm256_add_epi16(y0, yOne256);
         y1 = _mm256_add_epi16(y1, yOne256);
         y2 = _mm256_add_epi16(y2, yOne256);
@@ -997,9 +1000,9 @@ static void __forceinline decrease_banding_mode2_avx2(int thread_id, int thread_
         __m256i y0 = _mm256_load_si256((__m256i *)(ditherYC +  0));
         __m256i y1 = _mm256_load_si256((__m256i *)(ditherYC + 16));
         __m256i y2 = _mm256_load_si256((__m256i *)(ditherYC + 32));
-        y0 = _mm256_slli_epi16(y0, 1);
-        y1 = _mm256_slli_epi16(y1, 1);
-        y2 = _mm256_slli_epi16(y2, 1);
+        y0 = _mm256_slli1_epi16(y0);
+        y1 = _mm256_slli1_epi16(y1);
+        y2 = _mm256_slli1_epi16(y2);
         y0 = _mm256_add_epi16(y0, yOne256);
         y1 = _mm256_add_epi16(y1, yOne256);
         y2 = _mm256_add_epi16(y2, yOne256);
