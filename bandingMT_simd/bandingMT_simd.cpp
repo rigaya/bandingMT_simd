@@ -230,8 +230,8 @@ void multi_thread_func_dummy(int thread_id, int thread_num, void *param1, void *
 void band_perf_check(FILTER *fp, FILTER_PROC_INFO *fpip) {
     static int check_count = 0;
     static std::map<int64_t, double> check_ms;
-    static const int X_DIV[] = { 1, 2, 4, 6, 8, 10, 12, 16, 20, 24, 30, 40 };
-    static const int Y_DIV[] = { 1, 2, 4, 6, 8, 10, 12, 16, 20, 24, 32, 40, 48, 56, 64, 72, 80, 96, 128 };
+    static const int X_DIV[] = { 1, 2, 4, 6, 8, 10, 12, 15, 16, 20, 24, 30, 40 };
+    static const int Y_DIV[] = { 1, 2, 4, 6, 8, 10, 12, 15, 16, 20, 24, 32, 40, 48, 56, 64, 72, 80, 96, 128 };
     const int sample_mode    = fp->track[6];
     int64_t nFreq, nStart, nFin;
     if (dummy_area_count < band.current_thread_num) {
