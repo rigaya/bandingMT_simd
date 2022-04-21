@@ -33,6 +33,9 @@
 #include <algorithm>
 #include <emmintrin.h>
 
+#define GATHER_BY_GPR   0 // 現状MMXを使ったほうが速い
+#define AVOID_VPBLENDVB 0 // 現状pblendvbを使ったほうが速い
+
 //実は普通にmemcpyのほうが速いかもだけど気にしない
 static void __forceinline sse2_memcpy(BYTE *dst, BYTE *src, int size) {
     if (size < 64) {

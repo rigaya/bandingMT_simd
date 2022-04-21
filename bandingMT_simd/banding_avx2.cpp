@@ -106,6 +106,16 @@ static void __forceinline avx2_memcpy(BYTE *dst, BYTE *src, int size) {
 #define _mm256_srli256_si256(a, i) ((i<=16) ? _mm256_alignr_epi8(_mm256_permute2x128_si256(a, a, (0x08<<4) + 0x03), a, i) : _mm256_bsrli_epi128(_mm256_permute2x128_si256(a, a, (0x08<<4) + 0x03), MM_ABS(i-16)))
 #define _mm256_slli256_si256(a, i) ((i<=16) ? _mm256_alignr_epi8(a, _mm256_permute2x128_si256(a, a, (0x00<<4) + 0x08), MM_ABS(16-i)) : _mm256_bslli_epi128(_mm256_permute2x128_si256(a, a, (0x00<<4) + 0x08), MM_ABS(i-16)))
 
+//r0 := (mask0 & 0x80) ? b0 : a0
+//SSE4.1の_mm256_blendv_epi8(__m256i a, __m256i b, __m256i mask) のSSE2版のようなもの
+static __forceinline __m256i select_by_mask(__m256i a, __m256i b, __m256i mask) {
+#if AVOID_VPBLENDVB
+    return _mm256_or_si256(_mm256_andnot_si256(mask, a), _mm256_and_si256(b, mask));
+#else
+    return _mm256_blendv_epi8(a, b, mask);
+#endif
+}
+
 static __forceinline __m256i _mm256_multi6_epi32(__m256i a) {
     return _mm256_add_epi32(_mm256_add_epi32(a, a), _mm256_slli_epi32(a, 2));
 }
@@ -354,7 +364,7 @@ static void __forceinline decrease_banding_mode0_avx2(int thread_id, int thread_
                 yYCPDiff = _mm256_abs_epi16(_mm256_subs_epi16(yYCP, yYCPRef0));
                 yThreshold = _mm256_load_si256((__m256i*)(threshold +  0));
                 yMask    = _mm256_cmpgt_epi16(yThreshold, yYCPDiff); //(a > b) ? 0xffff : 0x0000;
-                yBase    = _mm256_blendv_epi8(yYCP, yYCPRef0, yMask);  //r = (mask0 & 0xff) ? b : a
+                yBase    = select_by_mask(yYCP, yYCPRef0, yMask);  //r = (mask0 & 0xff) ? b : a
                 _mm256_storeu_si256((__m256i*)((BYTE *)ycp_dst +  0), yBase);
 
                 yGather3 = _mm256_i32gather_epi64((__int64 *)ycp_src, _mm256_extracti128_si256(yRefUpper, 1), 2);
@@ -367,7 +377,7 @@ static void __forceinline decrease_banding_mode0_avx2(int thread_id, int thread_
                 yYCPDiff = _mm256_abs_epi16(_mm256_subs_epi16(yYCP, yYCPRef0));
                 yThreshold = _mm256_load_si256((__m256i*)(threshold +  16));
                 yMask    = _mm256_cmpgt_epi16(yThreshold, yYCPDiff); //(a > b) ? 0xffff : 0x0000;
-                yBase    = _mm256_blendv_epi8(yYCP, yYCPRef0, yMask);  //r = (mask0 & 0xff) ? b : a
+                yBase    = select_by_mask(yYCP, yYCPRef0, yMask);  //r = (mask0 & 0xff) ? b : a
                 _mm256_storeu_si256((__m256i*)((BYTE *)ycp_dst + 32), yBase);
 
                 yYCPRef0 = yGather2;
@@ -375,7 +385,7 @@ static void __forceinline decrease_banding_mode0_avx2(int thread_id, int thread_
                 yYCPDiff = _mm256_abs_epi16(_mm256_subs_epi16(yYCP, yYCPRef0));
                 yThreshold = _mm256_load_si256((__m256i*)(threshold + 32));
                 yMask    = _mm256_cmpgt_epi16(yThreshold, yYCPDiff); //(a > b) ? 0xffff : 0x0000;
-                yBase    = _mm256_blendv_epi8(yYCP, yYCPRef0, yMask);  //r = (mask0 & 0xff) ? b : a
+                yBase    = select_by_mask(yYCP, yYCPRef0, yMask);  //r = (mask0 & 0xff) ? b : a
                 _mm256_storeu_si256((__m256i*)((BYTE *)ycp_dst + 64), yBase);
 
                 i_step = limit_1_to_16(x);
@@ -449,7 +459,16 @@ static void __forceinline decrease_banding_mode0_avx2(int thread_id, int thread_
                 _mm256_store_si256((__m256i*)&ref_buffer[0], _mm256_multi6_epi32(yRefLower));
                 _mm256_store_si256((__m256i*)&ref_buffer[8], _mm256_multi6_epi32(yRefUpper));
 
-                {
+                if (GATHER_BY_GPR) {
+                    ycp_buffer[0] = *(const PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[0]);
+                    ycp_buffer[1] = *(const PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[1]);
+                    ycp_buffer[2] = *(const PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[2]);
+                    ycp_buffer[3] = *(const PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[3]);
+                    ycp_buffer[4] = *(const PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[4]);
+                    ycp_buffer[5] = *(const PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[5]);
+                    ycp_buffer[6] = *(const PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[6]);
+                    ycp_buffer[7] = *(const PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[7]);
+                } else {
                     __m64 m0, m1, m2, m3, m4, m5, m6, m7;
                     m0 = *(__m64*)((BYTE *)ycp_src + ref_buffer[0]);
                     m1 = *(__m64*)((BYTE *)ycp_src + ref_buffer[1]);
@@ -486,10 +505,19 @@ static void __forceinline decrease_banding_mode0_avx2(int thread_id, int thread_
                 yYCPDiff = _mm256_abs_epi16(_mm256_subs_epi16(yYCP, yYCPRef0));
                 yThreshold = _mm256_load_si256((__m256i*)(threshold +  0));
                 yMask    = _mm256_cmpgt_epi16(yThreshold, yYCPDiff); //(a > b) ? 0xffff : 0x0000;
-                yBase    = _mm256_blendv_epi8(yYCP, yYCPRef0, yMask);  //r = (mask0 & 0xff) ? b : a
+                yBase    = select_by_mask(yYCP, yYCPRef0, yMask);  //r = (mask0 & 0xff) ? b : a
                 _mm256_storeu_si256((__m256i*)((BYTE *)ycp_dst +  0), yBase);
 
-                {
+                if (GATHER_BY_GPR) {
+                    ycp_buffer[ 8] = *(const PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[ 8]);
+                    ycp_buffer[ 9] = *(const PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[ 9]);
+                    ycp_buffer[10] = *(const PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[10]);
+                    ycp_buffer[11] = *(const PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[11]);
+                    ycp_buffer[12] = *(const PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[12]);
+                    ycp_buffer[13] = *(const PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[13]);
+                    ycp_buffer[14] = *(const PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[14]);
+                    ycp_buffer[15] = *(const PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[15]);
+                } else {
                     __m64 m0, m1, m2, m3, m4, m5, m6, m7;
                     m0 = *(__m64*)((BYTE *)ycp_src + ref_buffer[8]);
                     m1 = *(__m64*)((BYTE *)ycp_src + ref_buffer[9]);
@@ -525,7 +553,7 @@ static void __forceinline decrease_banding_mode0_avx2(int thread_id, int thread_
                 yYCPDiff = _mm256_abs_epi16(_mm256_subs_epi16(yYCP, yYCPRef0));
                 yThreshold = _mm256_load_si256((__m256i*)(threshold +  16));
                 yMask    = _mm256_cmpgt_epi16(yThreshold, yYCPDiff); //(a > b) ? 0xffff : 0x0000;
-                yBase    = _mm256_blendv_epi8(yYCP, yYCPRef0, yMask);  //r = (mask0 & 0xff) ? b : a
+                yBase    = select_by_mask(yYCP, yYCPRef0, yMask);  //r = (mask0 & 0xff) ? b : a
                 _mm256_storeu_si256((__m256i*)((BYTE *)ycp_dst + 32), yBase);
 
 
@@ -534,7 +562,7 @@ static void __forceinline decrease_banding_mode0_avx2(int thread_id, int thread_
                 yYCPDiff = _mm256_abs_epi16(_mm256_subs_epi16(yYCP, yYCPRef0));
                 yThreshold = _mm256_load_si256((__m256i*)(threshold + 32));
                 yMask    = _mm256_cmpgt_epi16(yThreshold, yYCPDiff); //(a > b) ? 0xffff : 0x0000;
-                yBase    = _mm256_blendv_epi8(yYCP, yYCPRef0, yMask);  //r = (mask0 & 0xff) ? b : a
+                yBase    = select_by_mask(yYCP, yYCPRef0, yMask);  //r = (mask0 & 0xff) ? b : a
                 _mm256_storeu_si256((__m256i*)((BYTE *)ycp_dst + 64), yBase);
 
                 i_step = limit_1_to_16(x);
@@ -561,33 +589,45 @@ void decrease_banding_mode0_i_avx2(int thread_id, int thread_num, FILTER* fp, FI
 #pragma warning (push)
 #pragma warning (disable: 4799) //warning C4799: emms命令がありません
 static void __forceinline gather_ycp(PIXEL_YC *ycp_buffer, const PIXEL_YC *ycp_src, const int *ref_buffer, int i) {
-    __m64 m0, m1, m2, m3, m4, m5, m6, m7;
-    m0 = *(__m64*)((BYTE *)ycp_src + ref_buffer[i+0]);
-    m1 = *(__m64*)((BYTE *)ycp_src + ref_buffer[i+1]);
-    m2 = *(__m64*)((BYTE *)ycp_src + ref_buffer[i+2]);
-    m3 = *(__m64*)((BYTE *)ycp_src + ref_buffer[i+3]);
-    m4 = *(__m64*)((BYTE *)ycp_src - ref_buffer[i+0] + i*12 + 0);
-    m5 = *(__m64*)((BYTE *)ycp_src - ref_buffer[i+1] + i*12 + 12);
-    m6 = *(__m64*)((BYTE *)ycp_src - ref_buffer[i+2] + i*12 + 24);
-    m7 = *(__m64*)((BYTE *)ycp_src - ref_buffer[i+3] + i*12 + 36);
-    m2 = _mm_shuffle_pi16(m2, _MM_SHUFFLE(2,2,1,0));
-    m6 = _mm_shuffle_pi16(m6, _MM_SHUFFLE(2,2,1,0));
-    m3 = _mm_alignr_pi8(m3, m2, 6);
-    m7 = _mm_alignr_pi8(m7, m6, 6);
-    *(__m64 *)((BYTE *)ycp_buffer +i*6+  16) = m3;
-    *(__m64 *)((BYTE *)ycp_buffer +i*6+ 112) = m7;
-    m1 = _mm_shuffle_pi16(m1, _MM_SHUFFLE(2,1,1,0));
-    m5 = _mm_shuffle_pi16(m5, _MM_SHUFFLE(2,1,1,0));
-    m2 = _mm_alignr_pi8(m2, m1, 4);
-    m6 = _mm_alignr_pi8(m6, m5, 4);
-    *(__m64 *)((BYTE *)ycp_buffer +i*6+   8) = m2;
-    *(__m64 *)((BYTE *)ycp_buffer +i*6+ 104) = m6;
-    m0 = _mm_shuffle_pi16(m0, _MM_SHUFFLE(2,1,0,0));
-    m4 = _mm_shuffle_pi16(m4, _MM_SHUFFLE(2,1,0,0));
-    m1 = _mm_alignr_pi8(m1, m0, 2);
-    m5 = _mm_alignr_pi8(m5, m4, 2);
-    *(__m64 *)((BYTE *)ycp_buffer +i*6+   0) = m1;
-    *(__m64 *)((BYTE *)ycp_buffer +i*6+  96) = m5;
+    if (GATHER_BY_GPR) {
+        ycp_buffer += i;
+        ycp_buffer[ 0] = *(const PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[i+0]);
+        ycp_buffer[ 1] = *(const PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[i+1]);
+        ycp_buffer[ 2] = *(const PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[i+2]);
+        ycp_buffer[ 3] = *(const PIXEL_YC *)((BYTE *)ycp_src + ref_buffer[i+3]);
+        ycp_buffer[16] = *(const PIXEL_YC *)((BYTE *)ycp_src - ref_buffer[i+0] + i * 12 +  0);
+        ycp_buffer[17] = *(const PIXEL_YC *)((BYTE *)ycp_src - ref_buffer[i+1] + i * 12 + 12);
+        ycp_buffer[18] = *(const PIXEL_YC *)((BYTE *)ycp_src - ref_buffer[i+2] + i * 12 + 24);
+        ycp_buffer[19] = *(const PIXEL_YC *)((BYTE *)ycp_src - ref_buffer[i+3] + i * 12 + 36);
+    } else {
+        __m64 m0, m1, m2, m3, m4, m5, m6, m7;
+        m0 = *(__m64*)((BYTE *)ycp_src + ref_buffer[i + 0]);
+        m1 = *(__m64*)((BYTE *)ycp_src + ref_buffer[i + 1]);
+        m2 = *(__m64*)((BYTE *)ycp_src + ref_buffer[i + 2]);
+        m3 = *(__m64*)((BYTE *)ycp_src + ref_buffer[i + 3]);
+        m4 = *(__m64*)((BYTE *)ycp_src - ref_buffer[i + 0] + i * 12 + 0);
+        m5 = *(__m64*)((BYTE *)ycp_src - ref_buffer[i + 1] + i * 12 + 12);
+        m6 = *(__m64*)((BYTE *)ycp_src - ref_buffer[i + 2] + i * 12 + 24);
+        m7 = *(__m64*)((BYTE *)ycp_src - ref_buffer[i + 3] + i * 12 + 36);
+        m2 = _mm_shuffle_pi16(m2, _MM_SHUFFLE(2, 2, 1, 0));
+        m6 = _mm_shuffle_pi16(m6, _MM_SHUFFLE(2, 2, 1, 0));
+        m3 = _mm_alignr_pi8(m3, m2, 6);
+        m7 = _mm_alignr_pi8(m7, m6, 6);
+        *(__m64 *)((BYTE *)ycp_buffer + i * 6 + 16) = m3;
+        *(__m64 *)((BYTE *)ycp_buffer + i * 6 + 112) = m7;
+        m1 = _mm_shuffle_pi16(m1, _MM_SHUFFLE(2, 1, 1, 0));
+        m5 = _mm_shuffle_pi16(m5, _MM_SHUFFLE(2, 1, 1, 0));
+        m2 = _mm_alignr_pi8(m2, m1, 4);
+        m6 = _mm_alignr_pi8(m6, m5, 4);
+        *(__m64 *)((BYTE *)ycp_buffer + i * 6 + 8) = m2;
+        *(__m64 *)((BYTE *)ycp_buffer + i * 6 + 104) = m6;
+        m0 = _mm_shuffle_pi16(m0, _MM_SHUFFLE(2, 1, 0, 0));
+        m4 = _mm_shuffle_pi16(m4, _MM_SHUFFLE(2, 1, 0, 0));
+        m1 = _mm_alignr_pi8(m1, m0, 2);
+        m5 = _mm_alignr_pi8(m5, m4, 2);
+        *(__m64 *)((BYTE *)ycp_buffer + i * 6 + 0) = m1;
+        *(__m64 *)((BYTE *)ycp_buffer + i * 6 + 96) = m5;
+    }
 }
 #pragma warning (pop)
 
@@ -693,11 +733,11 @@ static void __forceinline decrease_banding_mode1_avx2(int thread_id, int thread_
                 xYCPAvg  = _mm256_srai_epi16(_mm256_adds_epi16(_mm256_adds_epi16(yYCPRef0, yYCPRef1), yOne256), 1);
                 yYCP     = _mm256_loadu_si256((__m256i*)((BYTE *)ycp_src +  0));
                 yYCPDiff = (blur_first) ? _mm256_abs_epi16(_mm256_subs_epi16(yYCP, xYCPAvg))
-                    : _mm256_max_epi16(_mm256_abs_epi16(_mm256_subs_epi16(yYCP, yYCPRef0)),
-                        _mm256_abs_epi16(_mm256_subs_epi16(yYCP, yYCPRef1)));
+                                        : _mm256_max_epi16(_mm256_abs_epi16(_mm256_subs_epi16(yYCP, yYCPRef0)),
+                                                           _mm256_abs_epi16(_mm256_subs_epi16(yYCP, yYCPRef1)));
                 yThreshold = _mm256_load_si256((__m256i*)(threshold +  0));
                 yMask    = _mm256_cmpgt_epi16(yThreshold, yYCPDiff); //(a > b) ? 0xffff : 0x0000;
-                yBase    = _mm256_blendv_epi8(yYCP, xYCPAvg, yMask);  //r = (mask0 & 0xff) ? b : a
+                yBase    = select_by_mask(yYCP, xYCPAvg, yMask);  //r = (mask0 & 0xff) ? b : a
                 yDither  = _mm256_load_si256((__m256i *)(dither +  0));
                 yYCP     = _mm256_adds_epi16(yBase, yDither);
                 _mm256_storeu_si256((__m256i*)((BYTE *)ycp_dst +  0), yYCP);
@@ -720,11 +760,11 @@ static void __forceinline decrease_banding_mode1_avx2(int thread_id, int thread_
                 xYCPAvg  = _mm256_srai_epi16(_mm256_adds_epi16(_mm256_adds_epi16(yYCPRef0, yYCPRef1), yOne256), 1);
                 yYCP     = _mm256_loadu_si256((__m256i*)((BYTE *)ycp_src + 32));
                 yYCPDiff = (blur_first) ? _mm256_abs_epi16(_mm256_subs_epi16(yYCP, xYCPAvg))
-                    : _mm256_max_epi16(_mm256_abs_epi16(_mm256_subs_epi16(yYCP, yYCPRef0)),
-                        _mm256_abs_epi16(_mm256_subs_epi16(yYCP, yYCPRef1)));
+                                        : _mm256_max_epi16(_mm256_abs_epi16(_mm256_subs_epi16(yYCP, yYCPRef0)),
+                                                           _mm256_abs_epi16(_mm256_subs_epi16(yYCP, yYCPRef1)));
                 yThreshold = _mm256_load_si256((__m256i*)(threshold + 16));
                 yMask    = _mm256_cmpgt_epi16(yThreshold, yYCPDiff); //(a > b) ? 0xffff : 0x0000;
-                yBase    = _mm256_blendv_epi8(yYCP, xYCPAvg, yMask);  //r = (mask0 & 0xff) ? b : a
+                yBase    = select_by_mask(yYCP, xYCPAvg, yMask);  //r = (mask0 & 0xff) ? b : a
                 yDither  = _mm256_load_si256((__m256i *)(dither + 16));
                 yYCP     = _mm256_adds_epi16(yBase, yDither);
                 _mm256_storeu_si256((__m256i*)((BYTE *)ycp_dst + 32), yYCP);
@@ -736,11 +776,11 @@ static void __forceinline decrease_banding_mode1_avx2(int thread_id, int thread_
                 xYCPAvg  = _mm256_srai_epi16(_mm256_adds_epi16(_mm256_adds_epi16(yYCPRef0, yYCPRef1), yOne256), 1);
                 yYCP     = _mm256_loadu_si256((__m256i*)((BYTE *)ycp_src + 64));
                 yYCPDiff = (blur_first) ? _mm256_abs_epi16(_mm256_subs_epi16(yYCP, xYCPAvg))
-                    : _mm256_max_epi16(_mm256_abs_epi16(_mm256_subs_epi16(yYCP, yYCPRef0)),
-                        _mm256_abs_epi16(_mm256_subs_epi16(yYCP, yYCPRef1)));
+                                        : _mm256_max_epi16(_mm256_abs_epi16(_mm256_subs_epi16(yYCP, yYCPRef0)),
+                                                           _mm256_abs_epi16(_mm256_subs_epi16(yYCP, yYCPRef1)));
                 yThreshold = _mm256_load_si256((__m256i*)(threshold + 32));
                 yMask    = _mm256_cmpgt_epi16(yThreshold, yYCPDiff); //(a > b) ? 0xffff : 0x0000;
-                yBase    = _mm256_blendv_epi8(yYCP, xYCPAvg, yMask);  //r = (mask0 & 0xff) ? b : a
+                yBase    = select_by_mask(yYCP, xYCPAvg, yMask);  //r = (mask0 & 0xff) ? b : a
                 yDither  = _mm256_load_si256((__m256i *)(dither + 32));
                 yYCP     = _mm256_adds_epi16(yBase, yDither);
                 _mm256_storeu_si256((__m256i*)((BYTE *)ycp_dst + 64), yYCP);
@@ -868,11 +908,11 @@ static void __forceinline decrease_banding_mode1_avx2(int thread_id, int thread_
                 xYCPAvg  = _mm256_srai_epi16(_mm256_adds_epi16(_mm256_adds_epi16(yYCPRef0, yYCPRef1), yOne256), 1);
                 yYCP     = _mm256_loadu_si256((__m256i*)((BYTE *)ycp_src +  0));
                 yYCPDiff = (blur_first) ? _mm256_abs_epi16(_mm256_subs_epi16(yYCP, xYCPAvg))
-                    : _mm256_max_epi16(_mm256_abs_epi16(_mm256_subs_epi16(yYCP, yYCPRef0)),
-                        _mm256_abs_epi16(_mm256_subs_epi16(yYCP, yYCPRef1)));
+                                        : _mm256_max_epi16(_mm256_abs_epi16(_mm256_subs_epi16(yYCP, yYCPRef0)),
+                                                           _mm256_abs_epi16(_mm256_subs_epi16(yYCP, yYCPRef1)));
                 yThreshold = _mm256_load_si256((__m256i*)(threshold +  0));
                 yMask    = _mm256_cmpgt_epi16(yThreshold, yYCPDiff); //(a > b) ? 0xffff : 0x0000;
-                yBase    = _mm256_blendv_epi8(yYCP, xYCPAvg, yMask);  //r = (mask0 & 0xff) ? b : a
+                yBase    = select_by_mask(yYCP, xYCPAvg, yMask);  //r = (mask0 & 0xff) ? b : a
                 yDither  = _mm256_load_si256((__m256i *)(dither +  0));
                 yYCP     = _mm256_adds_epi16(yBase, yDither);
                 _mm256_storeu_si256((__m256i*)((BYTE *)ycp_dst +  0), yYCP);
@@ -886,11 +926,11 @@ static void __forceinline decrease_banding_mode1_avx2(int thread_id, int thread_
                 xYCPAvg  = _mm256_srai_epi16(_mm256_adds_epi16(_mm256_adds_epi16(yYCPRef0, yYCPRef1), yOne256), 1);
                 yYCP     = _mm256_loadu_si256((__m256i*)((BYTE *)ycp_src + 32));
                 yYCPDiff = (blur_first) ? _mm256_abs_epi16(_mm256_subs_epi16(yYCP, xYCPAvg))
-                    : _mm256_max_epi16(_mm256_abs_epi16(_mm256_subs_epi16(yYCP, yYCPRef0)),
-                        _mm256_abs_epi16(_mm256_subs_epi16(yYCP, yYCPRef1)));
+                                        : _mm256_max_epi16(_mm256_abs_epi16(_mm256_subs_epi16(yYCP, yYCPRef0)),
+                                                           _mm256_abs_epi16(_mm256_subs_epi16(yYCP, yYCPRef1)));
                 yThreshold = _mm256_load_si256((__m256i*)(threshold + 16));
                 yMask    = _mm256_cmpgt_epi16(yThreshold, yYCPDiff); //(a > b) ? 0xffff : 0x0000;
-                yBase    = _mm256_blendv_epi8(yYCP, xYCPAvg, yMask);  //r = (mask0 & 0xff) ? b : a
+                yBase    = select_by_mask(yYCP, xYCPAvg, yMask);  //r = (mask0 & 0xff) ? b : a
                 yDither  = _mm256_load_si256((__m256i *)(dither + 16));
                 yYCP     = _mm256_adds_epi16(yBase, yDither);
                 _mm256_storeu_si256((__m256i*)((BYTE *)ycp_dst + 32), yYCP);
@@ -902,11 +942,11 @@ static void __forceinline decrease_banding_mode1_avx2(int thread_id, int thread_
                 xYCPAvg  = _mm256_srai_epi16(_mm256_adds_epi16(_mm256_adds_epi16(yYCPRef0, yYCPRef1), yOne256), 1);
                 yYCP     = _mm256_loadu_si256((__m256i*)((BYTE *)ycp_src + 64));
                 yYCPDiff = (blur_first) ? _mm256_abs_epi16(_mm256_subs_epi16(yYCP, xYCPAvg))
-                    : _mm256_max_epi16(_mm256_abs_epi16(_mm256_subs_epi16(yYCP, yYCPRef0)),
-                        _mm256_abs_epi16(_mm256_subs_epi16(yYCP, yYCPRef1)));
+                                        : _mm256_max_epi16(_mm256_abs_epi16(_mm256_subs_epi16(yYCP, yYCPRef0)),
+                                                           _mm256_abs_epi16(_mm256_subs_epi16(yYCP, yYCPRef1)));
                 yThreshold = _mm256_load_si256((__m256i*)(threshold + 32));
                 yMask    = _mm256_cmpgt_epi16(yThreshold, yYCPDiff); //(a > b) ? 0xffff : 0x0000;
-                yBase    = _mm256_blendv_epi8(yYCP, xYCPAvg, yMask);  //r = (mask0 & 0xff) ? b : a
+                yBase    = select_by_mask(yYCP, xYCPAvg, yMask);  //r = (mask0 & 0xff) ? b : a
                 yDither  = _mm256_load_si256((__m256i *)(dither + 32));
                 yYCP     = _mm256_adds_epi16(yBase, yDither);
                 _mm256_storeu_si256((__m256i*)((BYTE *)ycp_dst + 64), yYCP);
@@ -1073,17 +1113,17 @@ static void __forceinline decrease_banding_mode2_avx2(int thread_id, int thread_
                 xYCPRef2 = _mm256_load_si256((__m256i*)((BYTE*)ycp_buffer + 192));
                 xYCPRef3 = _mm256_load_si256((__m256i*)((BYTE*)ycp_buffer + 288));
                 xYCPAvg  = _mm256_srai_epi16(_mm256_adds_epi16(yTwo256,
-                    _mm256_adds_epi16(_mm256_adds_epi16(yYCPRef0, yYCPRef1),
-                        _mm256_adds_epi16(xYCPRef2, xYCPRef3))), 2);
+                                             _mm256_adds_epi16(_mm256_adds_epi16(yYCPRef0, yYCPRef1),
+                                                               _mm256_adds_epi16(xYCPRef2, xYCPRef3))), 2);
                 yYCP     = _mm256_loadu_si256((__m256i*)((BYTE *)ycp_src +  0));
                 yYCPDiff = (blur_first) ? _mm256_abs_epi16(_mm256_subs_epi16(yYCP, xYCPAvg))
-                    : _mm256_max_epi16(_mm256_max_epi16(_mm256_abs_epi16(_mm256_subs_epi16(yYCP, yYCPRef0)),
-                        _mm256_abs_epi16(_mm256_subs_epi16(yYCP, yYCPRef1))),
-                        _mm256_max_epi16(_mm256_abs_epi16(_mm256_subs_epi16(yYCP, xYCPRef2)),
-                            _mm256_abs_epi16(_mm256_subs_epi16(yYCP, xYCPRef3))));
+                                        : _mm256_max_epi16(_mm256_max_epi16(_mm256_abs_epi16(_mm256_subs_epi16(yYCP, yYCPRef0)),
+                                                                            _mm256_abs_epi16(_mm256_subs_epi16(yYCP, yYCPRef1))),
+                                                           _mm256_max_epi16(_mm256_abs_epi16(_mm256_subs_epi16(yYCP, xYCPRef2)),
+                                                                            _mm256_abs_epi16(_mm256_subs_epi16(yYCP, xYCPRef3))));
                 yThreshold = _mm256_load_si256((__m256i*)(threshold +  0));
                 yMask    = _mm256_cmpgt_epi16(yThreshold, yYCPDiff); //(a > b) ? 0xffff : 0x0000;
-                yBase    = _mm256_blendv_epi8(yYCP, xYCPAvg, yMask);  //r = (mask0 & 0xff) ? b : a
+                yBase    = select_by_mask(yYCP, xYCPAvg, yMask);  //r = (mask0 & 0xff) ? b : a
                 yDither  = _mm256_load_si256((__m256i *)(dither +  0));
                 yYCP     = _mm256_adds_epi16(yBase, yDither);
                 _mm256_storeu_si256((__m256i*)((BYTE *)ycp_dst +  0), yYCP);
@@ -1099,17 +1139,17 @@ static void __forceinline decrease_banding_mode2_avx2(int thread_id, int thread_
                 xYCPRef2 = _mm256_load_si256((__m256i*)((BYTE*)ycp_buffer + 224));
                 xYCPRef3 = _mm256_load_si256((__m256i*)((BYTE*)ycp_buffer + 320));
                 xYCPAvg  = _mm256_srai_epi16(_mm256_adds_epi16(yTwo256,
-                    _mm256_adds_epi16(_mm256_adds_epi16(yYCPRef0, yYCPRef1),
-                        _mm256_adds_epi16(xYCPRef2, xYCPRef3))), 2);
+                                             _mm256_adds_epi16(_mm256_adds_epi16(yYCPRef0, yYCPRef1),
+                                                               _mm256_adds_epi16(xYCPRef2, xYCPRef3))), 2);
                 yYCP     = _mm256_loadu_si256((__m256i*)((BYTE *)ycp_src + 32));
                 yYCPDiff = (blur_first) ? _mm256_abs_epi16(_mm256_subs_epi16(yYCP, xYCPAvg))
-                    : _mm256_max_epi16(_mm256_max_epi16(_mm256_abs_epi16(_mm256_subs_epi16(yYCP, yYCPRef0)),
-                        _mm256_abs_epi16(_mm256_subs_epi16(yYCP, yYCPRef1))),
-                        _mm256_max_epi16(_mm256_abs_epi16(_mm256_subs_epi16(yYCP, xYCPRef2)),
-                            _mm256_abs_epi16(_mm256_subs_epi16(yYCP, xYCPRef3))));
+                                        : _mm256_max_epi16(_mm256_max_epi16(_mm256_abs_epi16(_mm256_subs_epi16(yYCP, yYCPRef0)),
+                                                                            _mm256_abs_epi16(_mm256_subs_epi16(yYCP, yYCPRef1))),
+                                                           _mm256_max_epi16(_mm256_abs_epi16(_mm256_subs_epi16(yYCP, xYCPRef2)),
+                                                                            _mm256_abs_epi16(_mm256_subs_epi16(yYCP, xYCPRef3))));
                 yThreshold = _mm256_load_si256((__m256i*)(threshold + 16));
                 yMask    = _mm256_cmpgt_epi16(yThreshold, yYCPDiff); //(a > b) ? 0xffff : 0x0000;
-                yBase    = _mm256_blendv_epi8(yYCP, xYCPAvg, yMask);  //r = (mask0 & 0xff) ? b : a
+                yBase    = select_by_mask(yYCP, xYCPAvg, yMask);  //r = (mask0 & 0xff) ? b : a
                 yDither  = _mm256_load_si256((__m256i *)(dither + 16));
                 yYCP     = _mm256_adds_epi16(yBase, yDither);
                 _mm256_storeu_si256((__m256i*)((BYTE *)ycp_dst + 32), yYCP);
@@ -1121,17 +1161,17 @@ static void __forceinline decrease_banding_mode2_avx2(int thread_id, int thread_
                 xYCPRef2 = _mm256_load_si256((__m256i*)((BYTE*)ycp_buffer + 256));
                 xYCPRef3 = _mm256_load_si256((__m256i*)((BYTE*)ycp_buffer + 352));
                 xYCPAvg  = _mm256_srai_epi16(_mm256_adds_epi16(yTwo256,
-                    _mm256_adds_epi16(_mm256_adds_epi16(yYCPRef0, yYCPRef1),
-                        _mm256_adds_epi16(xYCPRef2, xYCPRef3))), 2);
+                                             _mm256_adds_epi16(_mm256_adds_epi16(yYCPRef0, yYCPRef1),
+                                                               _mm256_adds_epi16(xYCPRef2, xYCPRef3))), 2);
                 yYCP     = _mm256_loadu_si256((__m256i*)((BYTE *)ycp_src + 64));
                 yYCPDiff = (blur_first) ? _mm256_abs_epi16(_mm256_subs_epi16(yYCP, xYCPAvg))
-                    : _mm256_max_epi16(_mm256_max_epi16(_mm256_abs_epi16(_mm256_subs_epi16(yYCP, yYCPRef0)),
-                        _mm256_abs_epi16(_mm256_subs_epi16(yYCP, yYCPRef1))),
-                        _mm256_max_epi16(_mm256_abs_epi16(_mm256_subs_epi16(yYCP, xYCPRef2)),
-                            _mm256_abs_epi16(_mm256_subs_epi16(yYCP, xYCPRef3))));
+                                        : _mm256_max_epi16(_mm256_max_epi16(_mm256_abs_epi16(_mm256_subs_epi16(yYCP, yYCPRef0)),
+                                                                            _mm256_abs_epi16(_mm256_subs_epi16(yYCP, yYCPRef1))),
+                                                           _mm256_max_epi16(_mm256_abs_epi16(_mm256_subs_epi16(yYCP, xYCPRef2)),
+                                                                            _mm256_abs_epi16(_mm256_subs_epi16(yYCP, xYCPRef3))));
                 yThreshold = _mm256_load_si256((__m256i*)(threshold + 32));
                 yMask    = _mm256_cmpgt_epi16(yThreshold, yYCPDiff); //(a > b) ? 0xffff : 0x0000;
-                yBase    = _mm256_blendv_epi8(yYCP, xYCPAvg, yMask);  //r = (mask0 & 0xff) ? b : a
+                yBase    = select_by_mask(yYCP, xYCPAvg, yMask);  //r = (mask0 & 0xff) ? b : a
                 yDither  = _mm256_load_si256((__m256i *)(dither + 32));
                 yYCP     = _mm256_adds_epi16(yBase, yDither);
                 _mm256_storeu_si256((__m256i*)((BYTE *)ycp_dst + 64), yYCP);
