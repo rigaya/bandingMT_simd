@@ -7,15 +7,18 @@
 バンディング低減フィルタMTを勝手に高速化したものです。
 
 完全に手探りででっち上げたので、怪しいところもありますが、だいたい同じ効果が得られるかと。  
-AVX512 / AVX2 / 128bit-AVX / SSE4.1 / SSSE3 / SSE2 / MMX で高速化されています。
+AVX512-VNNI / AVX512 / AVX2+AVX-VNNI / AVX2 / 128bit-AVX / SSE4.1 / SSSE3 / SSE2 / MMX で高速化されています。
 環境に合わせて、最速のものが自動的に選択されます。
 
-## ダウンロード & 更新履歴
+## ダウンロード
+[github releases](https://github.com/rigaya/bandingMT_simd/releases)
+
+## 更新履歴
 [rigayaの日記兼メモ帳＞＞](http://rigaya34589.blog135.fc2.com/blog-category-15.html)
 
 ## 基本動作環境
-Windows 7, 8, 8.1, 10 (x86/x64)  
-Aviutl 0.99g4 以降
+Windows 8.1, 10, 11 (x86/x64)  
+Aviutl 1.00 以降
 
 ## バンディング低減MT SIMD 使用にあたっての注意事項
 無保証です。自己責任で使用してください。  

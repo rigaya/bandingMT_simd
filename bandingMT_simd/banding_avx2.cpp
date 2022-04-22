@@ -257,6 +257,12 @@ static void __forceinline createRandAVX2_4(xor514x2_t *gen_rand, const short *di
     y2 = _mm256_sub_epi16(y2, _mm256_load_si256((__m256i*)(ditherYC + 32)));
 }
 
+template<bool vnni>
+static __m256i __forceinline calcRefOffsetPlus(const __m256i& yRefLower, const __m256i& yRefMulti, const int *ref_offset) {
+    return (vnni) ? _mm256_dpwssd_avx_epi32(_mm256_load_si256((__m256i*)ref_offset), yRefLower, yRefMulti)
+                  : _mm256_add_epi32(_mm256_madd_epi16(yRefLower, yRefMulti), _mm256_load_si256((__m256i*)ref_offset));
+}
+
 #if USE_VPGATHER
 alignas(32) static const char PACK_YC48_SHUFFLE[96] = {
     10, 11, 12, 13, -1, -1, -1, -1,  0,  1,  2,  3,  4,  5,  8,  9,
@@ -295,7 +301,8 @@ static void __forceinline pack_yc48_2(__m256i& yGather1, __m256i& yGather2, __m2
     yTemp0   = _mm256_blend_epi32(yTemp0, yTemp1, 0xf0+0x08+0x04);
     yGather2 = _mm256_or_si256(yGather2, yTemp0);
 }
-static void __forceinline decrease_banding_mode0_avx2(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip, BOOL process_per_field, DWORD simd) {
+template<bool process_per_field, bool vnni>
+static void __forceinline decrease_banding_mode0_avx2(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
     const int sample_mode = 0;
     const int max_w  = fpip->max_w;
     const int width = fpip->w;
@@ -350,8 +357,8 @@ static void __forceinline decrease_banding_mode0_avx2(int thread_id, int thread_
                 __m256i yRefUpper = _mm256_cvtepi8_epi16(_mm256_extracti128_si256(yRef, 1));
                 __m256i yRefLower = _mm256_cvtepi8_epi16(_mm256_castsi256_si128(yRef));
 
-                yRefLower = _mm256_multi3_epi32(_mm256_add_epi32(_mm256_madd_epi16(yRefLower, yRefMulti), _mm256_load_si256((__m256i*)&ref_offset[0])));
-                yRefUpper = _mm256_multi3_epi32(_mm256_add_epi32(_mm256_madd_epi16(yRefUpper, yRefMulti), _mm256_load_si256((__m256i*)&ref_offset[8])));
+                yRefLower = _mm256_multi3_epi32(calcRefOffsetPlus<vnni>(yRefLower, yRefMulti, &ref_offset[0]));
+                yRefUpper = _mm256_multi3_epi32(calcRefOffsetPlus<vnni>(yRefUpper, yRefMulti, &ref_offset[8]));
 
                 yGather1 = _mm256_i32gather_epi64((__int64 *)ycp_src, _mm256_extracti128_si256(yRefLower, 1), 2);
                 yGather0 = _mm256_i32gather_epi64((__int64 *)ycp_src, _mm256_castsi256_si128(yRefLower), 2);
@@ -399,7 +406,8 @@ static void __forceinline decrease_banding_mode0_avx2(int thread_id, int thread_
     band.gen_rand_avx2[thread_id] = gen_rand;
 }
 #else
-static void __forceinline decrease_banding_mode0_avx2(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip, BOOL process_per_field, DWORD simd) {
+template<bool process_per_field, bool vnni>
+static void __forceinline decrease_banding_mode0_avx2(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
     const int sample_mode = 0;
     const int max_w  = fpip->max_w;
     const int width = fpip->w;
@@ -453,8 +461,8 @@ static void __forceinline decrease_banding_mode0_avx2(int thread_id, int thread_
                 __m256i yRefUpper = _mm256_cvtepi8_epi16(_mm256_extracti128_si256(yRef, 1));
                 __m256i yRefLower = _mm256_cvtepi8_epi16(_mm256_castsi256_si128(yRef));
 
-                yRefLower = _mm256_add_epi32(_mm256_madd_epi16(yRefLower, yRefMulti), _mm256_load_si256((__m256i*)&ref_offset[0]));
-                yRefUpper = _mm256_add_epi32(_mm256_madd_epi16(yRefUpper, yRefMulti), _mm256_load_si256((__m256i*)&ref_offset[8]));
+                yRefLower = calcRefOffsetPlus<vnni>(yRefLower, yRefMulti, &ref_offset[0]);
+                yRefUpper = calcRefOffsetPlus<vnni>(yRefUpper, yRefMulti, &ref_offset[8]);
 
                 _mm256_store_si256((__m256i*)&ref_buffer[0], _mm256_multi6_epi32(yRefLower));
                 _mm256_store_si256((__m256i*)&ref_buffer[8], _mm256_multi6_epi32(yRefUpper));
@@ -578,11 +586,19 @@ static void __forceinline decrease_banding_mode0_avx2(int thread_id, int thread_
 }
 #endif
 void decrease_banding_mode0_p_avx2(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
-    decrease_banding_mode0_avx2(thread_id, thread_num, fp, fpip, FALSE, AVX2|AVX|SSE41|SSSE3|SSE2);
+    decrease_banding_mode0_avx2<false, false>(thread_id, thread_num, fp, fpip);
 }
 
 void decrease_banding_mode0_i_avx2(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
-    decrease_banding_mode0_avx2(thread_id, thread_num, fp, fpip, TRUE, AVX2|AVX|SSE41|SSSE3|SSE2);
+    decrease_banding_mode0_avx2<true, false>(thread_id, thread_num, fp, fpip);
+}
+
+void decrease_banding_mode0_p_avx2vnni(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
+    decrease_banding_mode0_avx2<false, true>(thread_id, thread_num, fp, fpip);
+}
+
+void decrease_banding_mode0_i_avx2vnni(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
+    decrease_banding_mode0_avx2<true, true>(thread_id, thread_num, fp, fpip);
 }
 
 
@@ -634,7 +650,8 @@ static void __forceinline gather_ycp(PIXEL_YC *ycp_buffer, const PIXEL_YC *ycp_s
 #if USE_VPGATHER
 //blur_first、process_per_field、simdは定数として与え、
 //条件分岐をコンパイル時に削除させる
-static void __forceinline decrease_banding_mode1_avx2(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip, BOOL blur_first,  BOOL process_per_field, DWORD simd) {
+template<bool blur_first, bool process_per_field, bool vnni>
+static void __forceinline decrease_banding_mode1_avx2(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
     const int sample_mode = 1;
     const int max_w  = fpip->max_w;
     const int width = fpip->w;
@@ -815,7 +832,8 @@ static void __forceinline decrease_banding_mode1_avx2(int thread_id, int thread_
     band.gen_rand_avx2[thread_id] = gen_rand;
 }
 #else
-static void __forceinline decrease_banding_mode1_avx2(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip, BOOL blur_first,  BOOL process_per_field, DWORD simd) {
+template<bool blur_first, bool process_per_field, bool vnni>
+static void __forceinline decrease_banding_mode1_avx2(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
     const int sample_mode = 1;
     const int max_w  = fpip->max_w;
     const int width = fpip->w;
@@ -891,8 +909,8 @@ static void __forceinline decrease_banding_mode1_avx2(int thread_id, int thread_
                 __m256i yRefUpper = _mm256_cvtepi8_epi16(_mm256_extracti128_si256(yRef, 1));
                 __m256i yRefLower = _mm256_cvtepi8_epi16(_mm256_castsi256_si128(yRef));
 
-                yRefLower = _mm256_add_epi32(_mm256_madd_epi16(yRefLower, yRefMulti), _mm256_load_si256((__m256i*)&ref_offset[0]));
-                yRefUpper = _mm256_add_epi32(_mm256_madd_epi16(yRefUpper, yRefMulti), _mm256_load_si256((__m256i*)&ref_offset[8]));
+                yRefLower = calcRefOffsetPlus<vnni>(yRefLower, yRefMulti, &ref_offset[0]);
+                yRefUpper = calcRefOffsetPlus<vnni>(yRefUpper, yRefMulti, &ref_offset[8]);
 
                 _mm256_store_si256((__m256i*)&ref_buffer[0], _mm256_multi6_epi32(yRefLower));
                 _mm256_store_si256((__m256i*)&ref_buffer[8], _mm256_multi6_epi32(yRefUpper));
@@ -983,24 +1001,41 @@ static void __forceinline decrease_banding_mode1_avx2(int thread_id, int thread_
 }
 #endif
 void decrease_banding_mode1_blur_first_p_avx2(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
-    decrease_banding_mode1_avx2(thread_id, thread_num, fp, fpip, TRUE, FALSE, AVX2|AVX|SSE41|SSSE3|SSE2);
+    decrease_banding_mode1_avx2<true, false, false>(thread_id, thread_num, fp, fpip);
 }
 
 void decrease_banding_mode1_blur_first_i_avx2(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
-    decrease_banding_mode1_avx2(thread_id, thread_num, fp, fpip, TRUE, TRUE, AVX2|AVX|SSE41|SSSE3|SSE2);
+    decrease_banding_mode1_avx2<true, true, false>(thread_id, thread_num, fp, fpip);
 }
 
 void decrease_banding_mode1_blur_later_p_avx2(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
-    decrease_banding_mode1_avx2(thread_id, thread_num, fp, fpip, FALSE, FALSE, AVX2|AVX|SSE41|SSSE3|SSE2);
+    decrease_banding_mode1_avx2<false, false, false>(thread_id, thread_num, fp, fpip);
 }
 
 void decrease_banding_mode1_blur_later_i_avx2(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
-    decrease_banding_mode1_avx2(thread_id, thread_num, fp, fpip, FALSE, TRUE, AVX2|AVX|SSE41|SSSE3|SSE2);
+    decrease_banding_mode1_avx2<false, true, false>(thread_id, thread_num, fp, fpip);
+}
+
+void decrease_banding_mode1_blur_first_p_avx2vnni(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
+    decrease_banding_mode1_avx2<true, false, true>(thread_id, thread_num, fp, fpip);
+}
+
+void decrease_banding_mode1_blur_first_i_avx2vnni(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
+    decrease_banding_mode1_avx2<true, true, true>(thread_id, thread_num, fp, fpip);
+}
+
+void decrease_banding_mode1_blur_later_p_avx2vnni(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
+    decrease_banding_mode1_avx2<false, false, true>(thread_id, thread_num, fp, fpip);
+}
+
+void decrease_banding_mode1_blur_later_i_avx2vnni(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
+    decrease_banding_mode1_avx2<false, true, true>(thread_id, thread_num, fp, fpip);
 }
 
 //blur_first、process_per_field、simdは定数として与え、
 //条件分岐をコンパイル時に削除させる
-static void __forceinline decrease_banding_mode2_avx2(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip, BOOL blur_first,  BOOL process_per_field, DWORD simd) {
+template<bool blur_first, bool process_per_field, bool vnni>
+static void __forceinline decrease_banding_mode2_avx2(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
     const int sample_mode = 2;
     const int max_w  = fpip->max_w;
     const int width = fpip->w;
@@ -1078,24 +1113,24 @@ static void __forceinline decrease_banding_mode2_avx2(int thread_id, int thread_
                     __m256i yRefUpper = _mm256_cvtepi8_epi16(_mm256_extracti128_si256(yRef2, 1));
                     __m256i yRefLower = _mm256_cvtepi8_epi16(_mm256_castsi256_si128(yRef2));
 
-                    _mm256_store_si256((__m256i*)&ref_buffer[0], _mm256_multi6_epi32(_mm256_add_epi32(_mm256_madd_epi16(yRefLower, yRefMulti), _mm256_load_si256((__m256i*)&ref_offset[0]))));
-                    _mm256_store_si256((__m256i*)&ref_buffer[8], _mm256_multi6_epi32(_mm256_add_epi32(_mm256_madd_epi16(yRefUpper, yRefMulti), _mm256_load_si256((__m256i*)&ref_offset[8]))));
+                    _mm256_store_si256((__m256i*)&ref_buffer[0], _mm256_multi6_epi32(calcRefOffsetPlus<vnni>(yRefLower, yRefMulti, &ref_offset[0])));
+                    _mm256_store_si256((__m256i*)&ref_buffer[8], _mm256_multi6_epi32(calcRefOffsetPlus<vnni>(yRefUpper, yRefMulti, &ref_offset[8])));
 
                     yRef2 = apply_field_mask_256(yRef, FALSE);
                     yRefUpper = _mm256_cvtepi8_epi16(_mm256_extracti128_si256(yRef2, 1));
                     yRefLower = _mm256_cvtepi8_epi16(_mm256_castsi256_si128(yRef2));
 
-                    _mm256_store_si256((__m256i*)&ref_buffer[16], _mm256_multi6_epi32(_mm256_add_epi32(_mm256_madd_epi16(yRefLower, yRefMulti2), _mm256_load_si256((__m256i*)&ref_offset[0]))));
-                    _mm256_store_si256((__m256i*)&ref_buffer[24], _mm256_multi6_epi32(_mm256_add_epi32(_mm256_madd_epi16(yRefUpper, yRefMulti2), _mm256_load_si256((__m256i*)&ref_offset[8]))));
+                    _mm256_store_si256((__m256i*)&ref_buffer[16], _mm256_multi6_epi32(calcRefOffsetPlus<vnni>(yRefLower, yRefMulti2, &ref_offset[0])));
+                    _mm256_store_si256((__m256i*)&ref_buffer[24], _mm256_multi6_epi32(calcRefOffsetPlus<vnni>(yRefUpper, yRefMulti2, &ref_offset[8])));
                 } else {
                     __m256i yRefUpper = _mm256_cvtepi8_epi16(_mm256_extracti128_si256(yRef, 1));
                     __m256i yRefLower = _mm256_cvtepi8_epi16(_mm256_castsi256_si128(yRef));
 
-                    _mm256_store_si256((__m256i*)&ref_buffer[0], _mm256_multi6_epi32(_mm256_add_epi32(_mm256_madd_epi16(yRefLower, yRefMulti), _mm256_load_si256((__m256i*)&ref_offset[0]))));
-                    _mm256_store_si256((__m256i*)&ref_buffer[8], _mm256_multi6_epi32(_mm256_add_epi32(_mm256_madd_epi16(yRefUpper, yRefMulti), _mm256_load_si256((__m256i*)&ref_offset[8]))));
+                    _mm256_store_si256((__m256i*)&ref_buffer[0], _mm256_multi6_epi32(calcRefOffsetPlus<vnni>(yRefLower, yRefMulti, &ref_offset[0])));
+                    _mm256_store_si256((__m256i*)&ref_buffer[8], _mm256_multi6_epi32(calcRefOffsetPlus<vnni>(yRefUpper, yRefMulti, &ref_offset[8])));
 
-                    _mm256_store_si256((__m256i*)&ref_buffer[16], _mm256_multi6_epi32(_mm256_add_epi32(_mm256_madd_epi16(yRefLower, yRefMulti2), _mm256_load_si256((__m256i*)&ref_offset[0]))));
-                    _mm256_store_si256((__m256i*)&ref_buffer[24], _mm256_multi6_epi32(_mm256_add_epi32(_mm256_madd_epi16(yRefUpper, yRefMulti2), _mm256_load_si256((__m256i*)&ref_offset[8]))));
+                    _mm256_store_si256((__m256i*)&ref_buffer[16], _mm256_multi6_epi32(calcRefOffsetPlus<vnni>(yRefLower, yRefMulti2, &ref_offset[0])));
+                    _mm256_store_si256((__m256i*)&ref_buffer[24], _mm256_multi6_epi32(calcRefOffsetPlus<vnni>(yRefUpper, yRefMulti2, &ref_offset[8])));
                 }
 
 
@@ -1208,17 +1243,33 @@ static void __forceinline decrease_banding_mode2_avx2(int thread_id, int thread_
 }
 
 void decrease_banding_mode2_blur_first_p_avx2(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
-    decrease_banding_mode2_avx2(thread_id, thread_num, fp, fpip, TRUE, FALSE, AVX2|AVX|SSE41|SSSE3|SSE2);
+    decrease_banding_mode2_avx2<true, false, false>(thread_id, thread_num, fp, fpip);
 }
 
 void decrease_banding_mode2_blur_first_i_avx2(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
-    decrease_banding_mode2_avx2(thread_id, thread_num, fp, fpip, TRUE, TRUE, AVX2|AVX|SSE41|SSSE3|SSE2);
+    decrease_banding_mode2_avx2<true, true, false>(thread_id, thread_num, fp, fpip);
 }
 
 void decrease_banding_mode2_blur_later_p_avx2(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
-    decrease_banding_mode2_avx2(thread_id, thread_num, fp, fpip, FALSE, FALSE, AVX2|AVX|SSE41|SSSE3|SSE2);
+    decrease_banding_mode2_avx2<false, false, false>(thread_id, thread_num, fp, fpip);
 }
 
 void decrease_banding_mode2_blur_later_i_avx2(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
-    decrease_banding_mode2_avx2(thread_id, thread_num, fp, fpip, FALSE, TRUE, AVX2|AVX|SSE41|SSSE3|SSE2);
+    decrease_banding_mode2_avx2<false, true, false>(thread_id, thread_num, fp, fpip);
+}
+
+void decrease_banding_mode2_blur_first_p_avx2vnni(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
+    decrease_banding_mode2_avx2<true, false, true>(thread_id, thread_num, fp, fpip);
+}
+
+void decrease_banding_mode2_blur_first_i_avx2vnni(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
+    decrease_banding_mode2_avx2<true, true, true>(thread_id, thread_num, fp, fpip);
+}
+
+void decrease_banding_mode2_blur_later_p_avx2vnni(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
+    decrease_banding_mode2_avx2<false, false, true>(thread_id, thread_num, fp, fpip);
+}
+
+void decrease_banding_mode2_blur_later_i_avx2vnni(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
+    decrease_banding_mode2_avx2<false, true, true>(thread_id, thread_num, fp, fpip);
 }

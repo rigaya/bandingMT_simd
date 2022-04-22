@@ -231,6 +231,12 @@ static void __forceinline createRandAVX2_4(xor514x4_t *gen_rand, const short *di
     y2 = _mm512_sub_epi16(y2, _mm512_load_si512((__m512i*)(ditherYC + 64)));
 }
 
+template<bool vnni>
+static __m512i __forceinline calcRefOffsetPlus(const __m512i& zRefLower, const __m512i& zRefMulti, const int *ref_offset) {
+    return (vnni) ? _mm512_dpwssd_epi32(_mm512_load_si512((__m512i*)ref_offset), zRefLower, zRefMulti)
+                  : _mm512_add_epi32(_mm512_madd_epi16(zRefLower, zRefMulti), _mm512_load_si512((__m512i*)ref_offset));
+}
+
 alignas(64) static const uint16_t PACK_YC48_SHUFFLE_AVX512[48] = {
     0,  1,  2,  4,  5,  6,  8,  9,  10, 12, 13, 14, 16, 17, 18, 20,
     21, 22, 24, 25, 26, 28, 29, 30, 32, 33, 34, 36, 37, 38, 40, 41,
@@ -248,7 +254,7 @@ static void __forceinline pack_yc48_2(__m512i& yGather1, __m512i& yGather2, __m5
     yGather2 = _mm512_permutex2var_epi16(yGather2, zGatherIdx1, yGather3);
 }
 
-template<bool process_per_field>
+template<bool process_per_field, bool vnni>
 static void __forceinline decrease_banding_mode0_avx512(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
     const int sample_mode = 0;
     const int max_w  = fpip->max_w;
@@ -304,8 +310,8 @@ static void __forceinline decrease_banding_mode0_avx512(int thread_id, int threa
                 __m512i yRefUpper = _mm512_cvtepi8_epi16(_mm512_extracti64x4_epi64(yRef, 1));
                 __m512i yRefLower = _mm512_cvtepi8_epi16(_mm512_castsi512_si256(yRef));
 
-                yRefLower = _mm512_multi3_epi32(_mm512_add_epi32(_mm512_madd_epi16(yRefLower, yRefMulti), _mm512_load_si512((__m512i*)&ref_offset[ 0])));
-                yRefUpper = _mm512_multi3_epi32(_mm512_add_epi32(_mm512_madd_epi16(yRefUpper, yRefMulti), _mm512_load_si512((__m512i*)&ref_offset[16])));
+                yRefLower = _mm512_multi3_epi32(calcRefOffsetPlus<vnni>(yRefLower, yRefMulti, &ref_offset[ 0]));
+                yRefUpper = _mm512_multi3_epi32(calcRefOffsetPlus<vnni>(yRefUpper, yRefMulti, &ref_offset[16]));
 
                 yGather1 = _mm512_i32gather_epi64(_mm512_extracti64x4_epi64(yRefLower, 1), (void *)ycp_src, 2);
                 yGather0 = _mm512_i32gather_epi64(_mm512_castsi512_si256(yRefLower),       (void *)ycp_src, 2);
@@ -350,11 +356,19 @@ static void __forceinline decrease_banding_mode0_avx512(int thread_id, int threa
 }
 
 void decrease_banding_mode0_p_avx512(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
-    decrease_banding_mode0_avx512<false>(thread_id, thread_num, fp, fpip);
+    decrease_banding_mode0_avx512<false, false>(thread_id, thread_num, fp, fpip);
 }
 
 void decrease_banding_mode0_i_avx512(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
-    decrease_banding_mode0_avx512<true>(thread_id, thread_num, fp, fpip);
+    decrease_banding_mode0_avx512<true, false>(thread_id, thread_num, fp, fpip);
+}
+
+void decrease_banding_mode0_p_avx512vnni(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
+    decrease_banding_mode0_avx512<false, true>(thread_id, thread_num, fp, fpip);
+}
+
+void decrease_banding_mode0_i_avx512vnni(int thread_id, int thread_num, FILTER* fp, FILTER_PROC_INFO *fpip) {
+    decrease_banding_mode0_avx512<true, true>(thread_id, thread_num, fp, fpip);
 }
 
 template<bool blur_first, bool process_per_field>
