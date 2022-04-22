@@ -178,17 +178,7 @@ void band_get_block_range(int ib, int width, int height, int *x_start, int *x_fi
 
 static void set_block_size(int width) {
     band.block_count_x = (width + 127) / 128;
-    band.block_count_y = std::min(band.current_thread_num, 16);
-
-    if (band.cpu_info.max_cache_level >= 2
-        && band.cpu_info.physical_cores == band.cpu_info.caches[1].count) {
-        const int l2cache_size = band.cpu_info.caches[1].size / band.cpu_info.caches[1].count;
-        //キャッシュサイズが大きい場合には、1ブロックを大きくしたほうが速い
-        if (l2cache_size >= 1024 * 1024) {
-            band.block_count_x = (band.block_count_x + 1) / 2;
-            band.block_count_y = band.current_thread_num / band.block_count_x;
-        }
-    }
+    band.block_count_y = std::max(band.current_thread_num, 32);
 }
 
 void multi_thread_func( int thread_id, int thread_num, void *param1, void *param2 )
