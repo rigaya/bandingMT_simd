@@ -17,7 +17,7 @@ AVX512-VNNI / AVX512 / AVX2+AVX-VNNI / AVX2 / 128bit-AVX / SSE4.1 / SSSE3 / SSE2
 [rigayaの日記兼メモ帳＞＞](http://rigaya34589.blog135.fc2.com/blog-category-15.html)
 
 ## 基本動作環境
-Windows 8.1, 10, 11 (x86/x64)  
+Windows 10, 11 (x86/x64)  
 Aviutl 1.00 以降
 
 ## バンディング低減MT SIMD 使用にあたっての注意事項
