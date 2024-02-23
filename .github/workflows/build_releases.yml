@@ -17,7 +17,7 @@ jobs:
       version_name: ${{ steps.rev.outputs.VERSION_NAME }}
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
       with:
         fetch-depth: 0
     - name: Set version name
@@ -25,13 +25,13 @@ jobs:
       run: |
         cd ${{ github.workspace }}
         REVCOUNT=`git rev-list --count HEAD`
-        echo "::set-output name=REV_COUNT::${REVCOUNT}"
+        echo "rev_count=${REVCOUNT}" >> $GITHUB_OUTPUT
         if [[ "${{ github.ref }}" =~ "refs/tags/" ]]; then
           VERSION=$(echo ${{ github.ref }} | sed -e "s#refs/tags/##g")
         else
           VERSION=r${REVCOUNT}
         fi
-        echo "::set-output name=VERSION_NAME::${VERSION}"
+        echo "version_name=${VERSION}" >> $GITHUB_OUTPUT
 
   build:
     name: Upload Release Asset
@@ -44,13 +44,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           submodules: true
           fetch-depth: 0
 
       - name: Add msbuild to PATH
-        uses: microsoft/setup-msbuild@v1.1
+        uses: microsoft/setup-msbuild@v2
         with:
           msbuild-architecture: x86
 
@@ -62,9 +62,14 @@ jobs:
         id: archieve
         run: |
           mkdir bandingMT_simd_release
-          copy Release\${{ matrix.platform }}\bandingMT_simd.auf bandingMT_simd_release
+          copy Win32\Release\bandingMT_simd.auf bandingMT_simd_release
           copy bandingMT_simd_readme.txt bandingMT_simd_release
           7z a -mx9 bandingMT_simd_${{ needs.get_version_name.outputs.version_name }}.zip .\bandingMT_simd_release\*
+
+      - name: Calc hash
+        id: calc_hash
+        run: |
+          7z h -scrc* .\bandingMT_simd_${{ needs.get_version_name.outputs.version_name }}.zip
 
       - name: Upload Release Asset
         id: upload-release-asset 
@@ -74,3 +79,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           files: .\bandingMT_simd_${{ needs.get_version_name.outputs.version_name }}.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandingMT_simd_${{ needs.get_version_name.outputs.version_name }}
+          path: bandingMT_simd_${{ needs.get_version_name.outputs.version_name }}.zip
