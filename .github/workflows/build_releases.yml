@@ -64,12 +64,12 @@ jobs:
           mkdir bandingMT_simd_release
           copy Win32\Release\bandingMT_simd.auf bandingMT_simd_release
           copy bandingMT_simd_readme.txt bandingMT_simd_release
-          7z a -mx9 bandingMT_simd_${{ needs.get_version_name.outputs.version_name }}.zip .\bandingMT_simd_release\*
+          7z a -mx9 aviutl_bandingMT_simd_${{ needs.get_version_name.outputs.version_name }}.zip .\bandingMT_simd_release\*
 
       - name: Calc hash
         id: calc_hash
         run: |
-          7z h -scrc* .\bandingMT_simd_${{ needs.get_version_name.outputs.version_name }}.zip
+          7z h -scrc* .\aviutl_bandingMT_simd_${{ needs.get_version_name.outputs.version_name }}.zip
 
       - name: Upload Release Asset
         id: upload-release-asset 
@@ -78,13 +78,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          files: .\bandingMT_simd_${{ needs.get_version_name.outputs.version_name }}.zip
+          files: aviutl_bandingMT_simd_${{ needs.get_version_name.outputs.version_name }}.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: bandingMT_simd_${{ needs.get_version_name.outputs.version_name }}
-          path: bandingMT_simd_${{ needs.get_version_name.outputs.version_name }}.zip
+          name: aviutl_bandingMT_simd_${{ needs.get_version_name.outputs.version_name }}
+          path: aviutl_bandingMT_simd_${{ needs.get_version_name.outputs.version_name }}.zip
 
   anm2_release:
     name: Upload anm2 Release Asset
