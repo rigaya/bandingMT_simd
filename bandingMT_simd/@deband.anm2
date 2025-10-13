@@ -1,0 +1,159 @@
+@バンディング低減
+--label:加工
+--track0:range,0,63,15,1
+--track1:threshold,0,31,15
+--track2:dither,0,31,15
+--track3:sample,0,2,1,1
+--check0:blur_first,0
+
+--[[pixelshader@psmain:
+Texture2D texture0 : register(t0);
+cbuffer constant0 : register(b0) {
+    float range;       // 範囲
+    float threshold;   // 閾値
+    float dither;      // ディザ強度
+    float sample;      // サンプル数
+    int blur_first;
+};
+
+float4 load(int2 pos) {
+    return texture0.Load(int3(pos.x, pos.y, 0));
+}
+
+int2 get_res() {
+    uint w_src_u, h_src_u;
+    texture0.GetDimensions(w_src_u, h_src_u);
+    return int2(w_src_u, h_src_u);
+}
+
+uint3 iqint2_orig(uint3 x) {  
+    uint k = 1103515245;  
+  
+    x = ((x >> 8) ^ x.yzx) * k;  
+    x = ((x >> 8) ^ x.yzx) * k;  
+    x = ((x >> 8) ^ x.yzx) * k;  
+      
+    return x;  
+}  
+  
+float iqint2(float4 pos) { 
+    return (dot(iqint2_orig(pos.xyz), 1) + dot(iqint2_orig(pos.w), 1)) * 2.3283064365386962890625e-10;  
+}  
+
+int rand_offset(int2 pos, int range_limited, float seedw) {
+    int span = range_limited * 2 + 1;
+    float r = iqint2(float4((float)pos.x, (float)pos.y, 0.0, seedw));
+    int v = (int)floor(r * span) - range_limited;
+    return v;
+}
+
+float rand_symmetric(int2 pos, float amp, float seedw) {
+    float r = iqint2(float4((float)pos.x, (float)pos.y, 0.0, seedw));
+    return (r * 2.0 - 1.0) * amp;
+}
+
+int2 clamp_pos(int2 p, int w, int h) {
+    p.x = clamp(p.x, 0, w-1);
+    p.y = clamp(p.y, 0, h-1);
+    return p;
+}
+
+float compute_out_from_samples(float center, float s00, float s01, float s10, float s11, int sample_mode, bool blur_first, float threshold, float dither_noise) {
+    float clr_avg = center;
+    float clr_diff = 0.0;
+    if (sample_mode == 0) {
+        clr_avg = s00;
+        clr_diff = abs(center - s00);
+    } else if (sample_mode == 1) {
+        clr_avg = (s00 + s01) * 0.5;
+        clr_diff = blur_first ? abs(center - clr_avg) : max(abs(center - s00), abs(center - s01));
+    } else {
+        clr_avg = (s00 + s01 + s10 + s11) * 0.25;
+        if (blur_first) {
+            clr_diff = abs(center - clr_avg);
+        } else {
+            clr_diff = max(max(abs(center - s00), abs(center - s01)), max(abs(center - s10), abs(center - s11)));
+        }
+    }
+    float outv = (clr_diff < threshold) ? clr_avg : center;
+    outv += dither_noise;
+    return saturate(outv);
+}
+
+float4 psmain(float4 input : SV_Position) : SV_Target {
+    int2 res = get_res();
+    int w = (int)res.x;
+    int h = (int)res.y;
+    int2 pos = int2(input.xy);
+    pos.x = clamp(pos.x, 0, w-1);
+    pos.y = clamp(pos.y, 0, h-1);
+
+    float4 src = load(pos);
+
+    int iRange = (int)round(range);
+    int iSample = (int)round(sample);
+    bool blur_first_b = blur_first != 0;
+
+    int y_limit = min(pos.y, h - pos.y - 1);
+    int range_limited = min(min(min(iRange, y_limit), pos.x), w - pos.x - 1);
+    range_limited = max(range_limited, 0);
+
+    // 参照オフセットはピクセルごとに1回のみ生成し、RGBで共有
+    int refA =                  rand_offset(pos, range_limited, 11.0);
+    int refB = (iSample >= 1) ? rand_offset(pos, range_limited, 13.0) : 0;
+    int refC = (iSample >= 2) ? rand_offset(pos, range_limited, 17.0) : 0;
+    int refD = (iSample >= 2) ? rand_offset(pos, range_limited, 19.0) : 0;
+
+    // サンプル座標の算出 (必要な分だけ読み出し)
+    int2 q00 = clamp_pos(int2(pos.x + refB, pos.y + refA), w, h);
+    int2 q01 = clamp_pos(int2(pos.x - refB, pos.y - refA), w, h);
+    int2 q10 = clamp_pos(int2(pos.x + refC, pos.y + refD), w, h);
+    int2 q11 = clamp_pos(int2(pos.x - refC, pos.y - refD), w, h);
+
+    float4 s00 = load(q00);
+    float4 s01 = (iSample >= 1) ? load(q01) : s00;
+    float4 s10 = (iSample >= 2) ? load(q10) : s00;
+    float4 s11 = (iSample >= 2) ? load(q11) : s00;
+
+    // ディザ乱数
+    float dither_noise_r = 0.0, dither_noise_g = 0.0, dither_noise_b = 0.0;
+    if (iSample != 0 && dither > 0.0) {
+        dither_noise_r = rand_symmetric(pos, dither,  71.0);
+        dither_noise_g = rand_symmetric(pos, dither,  91.0);
+        dither_noise_b = rand_symmetric(pos, dither, 111.0);
+    }
+
+    float3 outRGB;
+    outRGB.r = compute_out_from_samples(src.r, s00.r, s01.r, s10.r, s11.r, iSample, blur_first_b, threshold, dither_noise_r);
+    outRGB.g = compute_out_from_samples(src.g, s00.g, s01.g, s10.g, s11.g, iSample, blur_first_b, threshold, dither_noise_g);
+    outRGB.b = compute_out_from_samples(src.b, s00.b, s01.b, s10.b, s11.b, iSample, blur_first_b, threshold, dither_noise_b);
+
+    return float4(outRGB, src.a);
+}
+]]
+
+-- 乱数は IQ's Integer Hash 2 を使用
+
+local w, h = obj.w, obj.h;
+
+if (w < 1 or h < 1) then
+    obj.load("plane",0,0)
+else
+    -- UIのトラック値を取得
+    local range   = obj.track0 or 15
+    local threshold= obj.track1 or 15
+    local dither  = obj.track2 or 15
+    local sample  = obj.track3 or 1
+    local blur_first  = 0
+    if (obj.check0) then blur_first = 1 end
+
+    if (sample > 0 and blur_first > 0) then
+        threshold = threshold * 2;
+    else
+        threshold = threshold * 4;
+    end
+
+    obj.setoption("drawtarget","tempbuffer",w,h)
+    obj.pixelshader("psmain","tempbuffer","object", { range, threshold / 4096.0, dither / 4096.0, sample, blur_first })
+    obj.load("tempbuffer")
+end

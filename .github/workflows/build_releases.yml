@@ -78,10 +78,39 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          files: bandingMT_simd_${{ needs.get_version_name.outputs.version_name }}.zip
+          files: .\bandingMT_simd_${{ needs.get_version_name.outputs.version_name }}.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: bandingMT_simd_${{ needs.get_version_name.outputs.version_name }}
           path: bandingMT_simd_${{ needs.get_version_name.outputs.version_name }}.zip
+
+  anm2_release:
+    name: Upload anm2 Release Asset
+    runs-on: windows-2022
+    needs: get_version_name
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create anm2 zip only
+        run: |
+          mkdir release
+          Copy-Item -LiteralPath ".\bandingMT_simd\@deband.anm2" -Destination ".\release" -Force
+          7z a -mx9 aviutl2_deband_anm2_${{ needs.get_version_name.outputs.version_name }}.zip .\release\*
+
+      - name: Upload Release Asset (anm2)
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          files: aviutl2_deband_anm2_${{ needs.get_version_name.outputs.version_name }}.zip
+
+      - name: Upload artifact (anm2)
+        uses: actions/upload-artifact@v4
+        with:
+          name: aviutl2_deband_anm2_${{ needs.get_version_name.outputs.version_name }}
+          path: aviutl2_deband_anm2_${{ needs.get_version_name.outputs.version_name }}.zip
